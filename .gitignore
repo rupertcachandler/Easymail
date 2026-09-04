@@ -1,0 +1,31 @@
+# Build
+/build/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Dependencies
+/node_modules/
+/frontend/node_modules/
+
+# Frontend
+/frontend/dist/
+
+# Go
+/vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config with passwords
+*.local
+.env
