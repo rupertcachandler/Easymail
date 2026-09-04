@@ -1,0 +1,4 @@
+#!/bin/sh
+set -e
+update-icon-caches /usr/share/icons/hicolor/ 2>/dev/null || true
+update-desktop-database /usr/share/applications/ 2>/dev/null || true

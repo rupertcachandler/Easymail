@@ -1,0 +1,9 @@
+easymail (0.1.0) unstable; urgency=low
+
+  * Initial release - people-centric email client
+  * ActiveSync (EAS) protocol support via go-activesync
+  * SQLite local cache with contact aggregation
+  * GNOME-adaptive dark/light theme
+  * Three-pane layout: contacts, conversation, detail
+
+ -- Frau Blücher <frau-blucher@btl.io>  Thu, 04 Sep 2026 17:00:00 +0100

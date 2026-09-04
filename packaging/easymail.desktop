@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=EasyMail
+Comment=People-centric email client
+Exec=easymail
+Icon=easymail
+Categories=Network;Email;
+StartupNotify=true
+MimeType=x-scheme-handler/mailto;
