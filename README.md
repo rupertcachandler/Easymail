@@ -1,4 +1,4 @@
-# EasyMail (BOI)
+# EasyMail (BOI) - A full Activesync client for Debian based OS's
 
 A people-centric email client that organizes your email by **people**, not
 folders. Speaks Microsoft's Exchange ActiveSync (EAS) protocol directly —
