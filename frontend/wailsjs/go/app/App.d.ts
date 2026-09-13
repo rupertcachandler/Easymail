@@ -4,6 +4,22 @@ import {models} from '../models';
 
 export function AddAccount(arg1:string,arg2:string,arg3:string,arg4:string):Promise<models.Account>;
 
+export function CopyEmails(arg1:string,arg2:Array<any>):Promise<void>;
+
+export function CreateCalendarEvent(arg1:string,arg2:string,arg3:models.CalendarEvent):Promise<string>;
+
+export function CreateMailFolder(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function DeleteCalendarEvent(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
+
+export function DeleteEmails(arg1:string,arg2:Array<any>):Promise<void>;
+
+export function DownloadAttachment(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function FetchAttachment(arg1:string,arg2:string):Promise<Record<string, string>>;
+
+export function GetCalendarEvents(arg1:string,arg2:string):Promise<Array<models.CalendarEvent>>;
+
 export function GetContacts(arg1:string):Promise<Array<models.Contact>>;
 
 export function GetEmails(arg1:string,arg2:string,arg3:number,arg4:number):Promise<Array<models.Email>>;
@@ -12,14 +28,40 @@ export function GetEmailsByContact(arg1:string,arg2:string,arg3:number,arg4:numb
 
 export function GetFolders(arg1:string):Promise<Array<models.Folder>>;
 
+export function GetMessageSource(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function GetOOFSettings(arg1:string):Promise<models.OOFSettings>;
+
+export function GetVersion():Promise<string>;
+
 export function ListAccounts():Promise<Array<models.Account>>;
+
+export function MoveEmails(arg1:string,arg2:Array<any>):Promise<void>;
+
+export function OpenAttachment(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function OpenExternal(arg1:string):Promise<void>;
 
 export function RemoveAccount(arg1:string):Promise<void>;
 
+export function SaveHTMLAs(arg1:string,arg2:string):Promise<string>;
+
 export function SearchContacts(arg1:string,arg2:string):Promise<Array<models.Contact>>;
 
+export function SendMail(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
+
+export function SetOOFSettings(arg1:string,arg2:models.OOFSettings):Promise<void>;
+
 export function Shutdown():Promise<void>;
+
+export function SyncCalendar(arg1:string,arg2:string):Promise<void>;
+
+export function SyncContacts(arg1:string,arg2:string):Promise<void>;
 
 export function SyncEmails(arg1:string,arg2:string):Promise<void>;
 
 export function SyncFolders(arg1:string):Promise<void>;
+
+export function UpdateAccount(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<models.Account>;
+
+export function UpdateCalendarEvent(arg1:string,arg2:string,arg3:string,arg4:string,arg5:models.CalendarEvent):Promise<string>;

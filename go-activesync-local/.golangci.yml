@@ -1,0 +1,146 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errcheck
+    - errorlint
+    - gocritic
+    - goconst
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - nilerr
+    - noctx
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+    - whitespace
+
+  settings:
+    errcheck:
+      check-blank: true
+      exclude-functions:
+        - (*bytes.Buffer).Write
+        - (*bytes.Buffer).WriteByte
+        - (*bytes.Buffer).WriteString
+        - (*github.com/remdev/go-activesync/wbxml.Encoder).WriteHeader
+        - (*github.com/remdev/go-activesync/wbxml.Encoder).StartTag
+        - (*github.com/remdev/go-activesync/wbxml.Encoder).EndTag
+        - (*github.com/remdev/go-activesync/wbxml.Encoder).StrI
+        - (*github.com/remdev/go-activesync/wbxml.Encoder).Opaque
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - paramTypeCombine
+        - hugeParam
+        - rangeValCopy
+        - unnamedResult
+        - appendCombine
+    gosec:
+      excludes:
+        # G115: integer overflow on length-derived size_t conversions is the
+        # standard Go idiom in low-level codecs; auditing each call site is
+        # unnecessary noise.
+        - G115
+        # G404: math/rand seeding is acceptable in tests and example helpers.
+        - G404
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+          arguments:
+            - disableStutteringCheck
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+          disabled: true
+        - name: var-declaration
+        - name: var-naming
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Tests intentionally exercise edge cases and may skip cleanup or use
+      # noisy patterns; relax the strictest lints there.
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - errcheck
+          - gocritic
+          - gosec
+          - goconst
+          - noctx
+          - prealloc
+          - revive
+          - unconvert
+          - unparam
+          - usestdlibvars
+          - usetesting
+      - path: examples/
+        linters:
+          - errcheck
+          - gocritic
+          - gosec
+          - revive
+      # G122 fires on every filepath.WalkDir; in the spec linter the directory
+      # tree is fully under the developer's control.
+      - path: internal/spec/spec\.go
+        linters:
+          - gosec
+        text: "G122"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/remdev/go-activesync
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

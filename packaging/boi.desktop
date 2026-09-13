@@ -1,9 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=EasyMail
+Name=BOI
 Comment=People-centric email client
-Exec=easymail
-Icon=easymail
+Exec=/usr/bin/boi
+Icon=boi
+StartupWMClass=boi
 Categories=Network;Email;
 StartupNotify=true
 MimeType=x-scheme-handler/mailto;

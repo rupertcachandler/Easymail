@@ -14,6 +14,9 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed build/appicon.png
+var appIcon []byte
+
 func main() {
 	easymail, err := app.New()
 	if err != nil {
@@ -23,7 +26,7 @@ func main() {
 	defer easymail.Shutdown()
 
 	err = wails.Run(&options.App{
-		Title:         "EasyMail",
+		Title:         "BOI",
 		Width:         1200,
 		Height:        800,
 		MinWidth:      900,
@@ -38,9 +41,10 @@ func main() {
 			easymail,
 		},
 		Linux: &linux.Options{
-			Icon:                nil,
+			Icon:                appIcon,
 			WindowIsTranslucent: false,
 			WebviewGpuPolicy:   linux.WebviewGpuPolicyAlways,
+			ProgramName:         "easymail",
 		},
 	})
 

@@ -5,8 +5,8 @@ Priority: optional
 Architecture: amd64
 Depends: libwebkit2gtk-4.1-0, libgtk-3-0, libsoup-3.0-0, libjavascriptcoregtk-4.1-0, libsqlite3-0
 Maintainer: Frau Blücher <frau-blucher@btl.io>
-Description: People-centric email client
- EasyMail is a people-centric email client for GNOME/Wayland,
- inspired by UniBox. It organizes your email by people, not folders,
- using the Exchange ActiveSync protocol for synchronisation.
- Built with Go, Wails, and Vue 3.
+Description: People-centric email client (BOI)
+ BOI is a people-centric email client that organizes your email by people,
+ not folders, using the Exchange ActiveSync protocol for synchronisation.
+ Built with Go, Wails, Vue 3. Desktop app for any Debian-family distro
+ (GNOME, KDE, XFCE, Cinnamon and more) on x86_64.

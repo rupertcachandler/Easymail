@@ -1,0 +1,116 @@
+spec_id,doc,section,requirement,status
+SPEC-LINT/self-test,internal/spec,self-test,bootstrap requirement covered by linter unit tests,required
+OMA-WBXML-1.3/header.version,OMA-WBXML-1.3,§5.4,WBXML version byte is 0x03 for WBXML 1.3,required
+OMA-WBXML-1.3/header.publicid,OMA-WBXML-1.3,§5.4,WBXML publicid is encoded as mb_u_int32 or as 0 followed by STR_T offset,required
+OMA-WBXML-1.3/header.charset,OMA-WBXML-1.3,§5.4,WBXML charset is encoded as mb_u_int32 IANA MIBenum (106 = UTF-8),required
+OMA-WBXML-1.3/header.stringtable,OMA-WBXML-1.3,§5.4,WBXML string-table is mb_u_int32 length followed by raw bytes,required
+OMA-WBXML-1.3/mb_u_int32.encoding,OMA-WBXML-1.3,§5.1,mb_u_int32 is big-endian 7-bit groups with continuation bit 0x80,required
+OMA-WBXML-1.3/mb_u_int32.boundaries,OMA-WBXML-1.3,§5.1,"mb_u_int32 round-trip boundaries 0; 0x7F; 0x80; 0x3FFF; 0x4000; 0x1FFFFF; 0xFFFFFFFF",required
+OMA-WBXML-1.3/global.SWITCH_PAGE,OMA-WBXML-1.3,§5.5,SWITCH_PAGE token = 0x00 followed by 1 byte page index,required
+OMA-WBXML-1.3/global.END,OMA-WBXML-1.3,§5.5,END token = 0x01 closes the most recent open element,required
+OMA-WBXML-1.3/global.STR_I,OMA-WBXML-1.3,§5.5,STR_I token = 0x03 followed by NUL-terminated UTF-8 string,required
+OMA-WBXML-1.3/global.STR_T,OMA-WBXML-1.3,§5.5,STR_T token = 0x83 followed by mb_u_int32 string-table offset,required
+OMA-WBXML-1.3/global.OPAQUE,OMA-WBXML-1.3,§5.5,OPAQUE token = 0xC3 followed by mb_u_int32 length and that many raw bytes,required
+OMA-WBXML-1.3/tag.bits,OMA-WBXML-1.3,§5.8.4.2,tag byte bit7 = has content; bit6 = has attributes; bits0-5 = tag identity within the active code page,required
+MS-ASWBXML/codepage.0.AirSync,MS-ASWBXML,§2.1.2.1.1,Code page 0 carries AirSync element tags including Sync,required
+MS-ASWBXML/codepage.1.Contacts,MS-ASWBXML,§2.1.2.1.2,Code page 1 carries Contacts element tags including FirstName/LastName/Email1Address,required
+MS-ASWBXML/codepage.2.Email,MS-ASWBXML,§2.1.2.1.3,Code page 2 carries Email element tags including Subject/From/To/DateReceived,required
+MS-ASWBXML/codepage.3.AirNotify,MS-ASWBXML,§2.1.2.1.4,Code page 3 (AirNotify) reserved for legacy compatibility,required
+MS-ASWBXML/codepage.4.Calendar,MS-ASWBXML,§2.1.2.1.5,Code page 4 carries Calendar element tags including StartTime/EndTime/Subject,required
+MS-ASWBXML/codepage.5.Move,MS-ASWBXML,§2.1.2.1.6,Code page 5 carries MoveItems element tags,required
+MS-ASWBXML/codepage.6.GetItemEstimate,MS-ASWBXML,§2.1.2.1.7,Code page 6 carries GetItemEstimate element tags,required
+MS-ASWBXML/codepage.7.FolderHierarchy,MS-ASWBXML,§2.1.2.1.8,Code page 7 carries FolderHierarchy element tags including FolderSync/FolderCreate,required
+MS-ASWBXML/codepage.8.MeetingResponse,MS-ASWBXML,§2.1.2.1.9,Code page 8 carries MeetingResponse element tags,required
+MS-ASWBXML/codepage.9.Tasks,MS-ASWBXML,§2.1.2.1.10,Code page 9 carries Tasks element tags including Subject/StartDate/DueDate,required
+MS-ASWBXML/codepage.10.ResolveRecipients,MS-ASWBXML,§2.1.2.1.11,Code page 10 carries ResolveRecipients element tags,required
+MS-ASWBXML/codepage.11.ValidateCert,MS-ASWBXML,§2.1.2.1.12,Code page 11 carries ValidateCert element tags,required
+MS-ASWBXML/codepage.12.Contacts2,MS-ASWBXML,§2.1.2.1.13,Code page 12 carries Contacts2 element tags including IMAddress/CustomerId,required
+MS-ASWBXML/codepage.13.Ping,MS-ASWBXML,§2.1.2.1.14,Code page 13 carries Ping element tags including HeartbeatInterval/Folders,required
+MS-ASWBXML/codepage.14.Provision,MS-ASWBXML,§2.1.2.1.15,Code page 14 carries Provision element tags including PolicyKey/EASProvisionDoc,required
+MS-ASWBXML/codepage.15.Search,MS-ASWBXML,§2.1.2.1.16,Code page 15 carries Search element tags,required
+MS-ASWBXML/codepage.16.GAL,MS-ASWBXML,§2.1.2.1.17,Code page 16 carries GAL element tags,required
+MS-ASWBXML/codepage.17.AirSyncBase,MS-ASWBXML,§2.1.2.1.18,Code page 17 carries AirSyncBase element tags including Body/BodyPreference/Attachments,required
+MS-ASWBXML/codepage.18.Settings,MS-ASWBXML,§2.1.2.1.19,Code page 18 carries Settings element tags,required
+MS-ASWBXML/codepage.19.DocumentLibrary,MS-ASWBXML,§2.1.2.1.20,Code page 19 carries DocumentLibrary element tags,required
+MS-ASWBXML/codepage.20.ItemOperations,MS-ASWBXML,§2.1.2.1.21,Code page 20 carries ItemOperations element tags,required
+MS-ASWBXML/codepage.21.ComposeMail,MS-ASWBXML,§2.1.2.1.22,Code page 21 carries ComposeMail element tags including SendMail/SmartReply/SmartForward,required
+MS-ASWBXML/codepage.22.Email2,MS-ASWBXML,§2.1.2.1.23,Code page 22 carries Email2 element tags including UmCallerID/UmUserNotes,required
+MS-ASWBXML/codepage.23.Notes,MS-ASWBXML,§2.1.2.1.24,Code page 23 carries Notes element tags including Subject/MessageClass,required
+MS-ASWBXML/codepage.24.RightsManagement,MS-ASWBXML,§2.1.2.1.25,Code page 24 carries RightsManagement element tags including RightsManagementSupport/RightsManagementLicense,required
+MS-ASWBXML/codepage.invariants,MS-ASWBXML,§2.1.2.1,every tag in every code page has a unique 6-bit token within that page and unique name; lookups round-trip both ways,required
+MS-ASWBXML/encoder.tag,MS-ASWBXML,§2.1.2.1,Encoder writes a tag byte composed from current code page identity and content/attribute bits,required
+MS-ASWBXML/encoder.switch-page,MS-ASWBXML,§2.1.2.1,Encoder emits SWITCH_PAGE 0x00 followed by 1 byte page id when the active code page changes between tags,required
+MS-ASWBXML/encoder.string,MS-ASWBXML,§2.1.2.1,Encoder emits inline strings as STR_I 0x03 followed by UTF-8 bytes terminated by NUL,required
+MS-ASWBXML/encoder.opaque,MS-ASWBXML,§2.1.2.1,Encoder emits opaque payloads as OPAQUE 0xC3 followed by mb_u_int32 length and raw bytes,required
+MS-ASWBXML/encoder.end,MS-ASWBXML,§2.1.2.1,Encoder emits END 0x01 to close the most recent open element,required
+MS-ASWBXML/decoder.tag,MS-ASWBXML,§2.1.2.1,Decoder yields tag tokens already resolved to (code page id; identity; attribute bit; content bit),required
+MS-ASWBXML/decoder.switch-page,MS-ASWBXML,§2.1.2.1,Decoder transparently consumes SWITCH_PAGE bytes and reflects the new page on subsequent tag tokens,required
+MS-ASWBXML/decoder.string,MS-ASWBXML,§2.1.2.1,Decoder reads STR_I as UTF-8 NUL-terminated string and STR_T as offset into the document string-table,required
+MS-ASWBXML/decoder.opaque,MS-ASWBXML,§2.1.2.1,Decoder reads OPAQUE payloads as a length-prefixed byte slice,required
+MS-ASWBXML/marshal.tag-resolution,MS-ASWBXML,§2.1.2.1,Marshal resolves struct tag wbxml=Page.Tag via the registered code page tables,required
+MS-ASWBXML/marshal.omitempty,MS-ASWBXML,§2.1.2.1,Marshal honours the ;omitempty option and skips zero-valued fields,required
+MS-ASWBXML/marshal.opaque,MS-ASWBXML,§2.1.2.1,Marshal honours the ;opaque option and emits the field value as OPAQUE,required
+MS-ASWBXML/marshal.slice,MS-ASWBXML,§2.1.2.1,Marshal emits one element per slice entry preserving order,required
+MS-ASWBXML/marshal.roundtrip,MS-ASWBXML,§2.1.2.1,Marshal followed by Unmarshal reproduces the input struct verbatim including nested page changes,required
+MS-ASWBXML/marshal.raw,MS-ASWBXML,§2.1.2.1,Marshal honours the ;raw option carrying RawElement bodies through round-trip,required
+MS-ASWBXML/marshal.raw-page,MS-ASWBXML,§2.1.2.1,RawElement preserves active code-page state for the next sibling element,required
+MS-ASCMD/sync.applicationdata.raw,MS-ASCMD,§2.2.2.20,Sync ApplicationData is carried as an opaque RawElement in SyncAdd and SyncChange,required
+MS-ASCMD/sync.applicationdata.typed,MS-ASCMD,§2.2.2.20,Typed convenience helpers decode ApplicationData into Email/Appointment/Contact/Task,required
+MS-ASCMD/sync.typed,MS-ASCMD,§2.2.2.20,SyncTyped[T] generic wrapper projects SyncResponse into typed Add/Change/Delete items,required
+MS-ASWBXML/decoder.fuzz,MS-ASWBXML,§2.1.2.1,Decoder must not panic on any byte input regardless of malformed structure,required
+MS-ASHTTP/request.path,MS-ASHTTP,§2.2.1,Request line uses POST /Microsoft-Server-ActiveSync,required
+MS-ASHTTP/query.base64.layout,MS-ASHTTP,§2.2.1.1.1.1,"Base64 query bytes layout: ProtocolVersion (1B); CommandCode (1B); Locale little-endian (2B); DeviceID len-prefixed; PolicyKey len-prefixed; DeviceType len-prefixed; Params",required
+MS-ASHTTP/query.base64.example,MS-ASHTTP,§2.2.1.1.1.1,"golden round-trip of canonical example bytes 8C 00 09 04 0A v140Device 00 0A SmartPhone matches base64 jAAJBAp2MTQwRGV2aWNlAApTbWFydFBob25l",required
+MS-ASHTTP/query.base64.params,MS-ASHTTP,§2.2.1.1.1.1.3,Command-specific parameters use 1B tag + 1B length + value,required
+MS-ASHTTP/query.plain,MS-ASHTTP,§2.2.1.1.1.2,Plain query carries Cmd; User; DeviceId; DeviceType as URL key=value pairs,required
+MS-ASHTTP/query.command-codes,MS-ASHTTP,§2.2.1.1.1.1.2,"Command codes Sync=0; FolderSync=9; Ping=18; Provision=20",required
+MS-ASHTTP/headers.protocol-version,MS-ASHTTP,§2.2.2,MS-ASProtocolVersion header is mandatory and equals the protocol version e.g. 14.1,required
+MS-ASHTTP/headers.content-type,MS-ASHTTP,§2.2.2,Content-Type is application/vnd.ms-sync.wbxml for WBXML payloads,required
+MS-ASHTTP/headers.user-agent,MS-ASHTTP,§2.2.2,User-Agent header is mandatory and identifies the client,required
+MS-ASHTTP/headers.policy-key,MS-ASHTTP,§2.2.2,X-MS-PolicyKey header carries the active provisioning policy key (0 for initial Provision),required
+MS-ASHTTP/headers.accept-language,MS-ASHTTP,§2.2.2,Accept-Language header is honoured when set by the caller,required
+MS-ASHTTP/auth.basic,MS-ASHTTP,§2.2.2,Authorization Basic header carries username:password base64-encoded,required
+MS-ASHTTP/store.policy,MS-ASHTTP,§2.2.2,PolicyStore Get/Set persist the current policy key across calls,required
+MS-ASHTTP/store.syncstate,MS-ASHTTP,§2.2.2,SyncStateStore Get/Set persist the current SyncKey per collection,required
+MS-ASHTTP/client.extra-headers-merge,MS-ASHTTP,§2.2.2,Optional integrator HTTP headers are merged after mandatory headers without overwriting keys already present on the request,required
+MS-ASHTTP/client.transport.force-http11,MS-ASHTTP,§2.2.1,When HTTPClient is nil and ForceHTTP11 is set the default Transport disables HTTP/2 ALPN via TLSNextProto for HTTPS interoperability,required
+MS-OXDISCO/request.schema,MS-OXDISCO,§3.1.5,POX request uses mobilesync requestschema 2006 and AcceptableResponseSchema is the matching responseschema,required
+MS-OXDISCO/request.path,MS-OXDISCO,§3.1.4,POST /autodiscover/autodiscover.xml as Content-Type text/xml UTF-8,required
+MS-OXDISCO/response.url,MS-OXDISCO,§3.1.5,Response Action/Settings/Server with Type MobileSync exposes the EAS endpoint URL,required
+MS-OXDISCO/response.redirect-url,MS-OXDISCO,§3.1.5,Response Action/Redirect carries a new autodiscover URL the client must follow,required
+MS-OXDISCO/response.redirect-addr,MS-OXDISCO,§3.1.5,Response Action/RedirectAddr carries a new e-mail address the client must restart from,required
+MS-OXDISCO/response.error,MS-OXDISCO,§3.1.5,Response Error/Status non-zero is surfaced as an error to the caller,required
+MS-OXDISCO/transport.candidates,MS-OXDISCO,§3.1.4,Discovery tries the autodiscover subdomain then the apex domain over HTTPS in order,required
+MS-OXDISCO/transport.302,MS-OXDISCO,§3.1.4,Discovery follows HTTP 302 redirects to a different host,required
+MS-OXDISCO/transport.srv,MS-OXDISCO,§3.1.4,Discovery falls back to DNS SRV _autodiscover._tcp.<domain> when both HTTPS candidates fail,required
+MS-ASCMD/format.datetime,MS-ASCMD,§2.2.1.1,DateTime values use UTC pattern YYYYMMDDTHHMMSSZ with optional fractional seconds dropped,required
+MS-ASEMAIL/fields.14.1,MS-ASEMAIL,§2.2.2,"Email message exposes DateReceived; Subject; From; To; Cc; ReplyTo; DisplayTo; ThreadTopic; Importance; Read; MessageClass; ContentClass",required
+MS-ASEMAIL/importance.enum,MS-ASEMAIL,§2.2.2.40,Importance enum Low=0; Normal=1; High=2,required
+MS-ASCAL/fields.14.1,MS-ASCAL,§2.2.2,"Calendar appointment exposes UID; Subject; Location; StartTime; EndTime; AllDayEvent; OrganizerEmail; OrganizerName; BusyStatus; Sensitivity; MeetingStatus; Categories; Reminder; DtStamp; Attendees; Recurrence; Exceptions",required
+MS-ASCAL/busystatus.enum,MS-ASCAL,§2.2.2.8,BusyStatus enum Free=0; Tentative=1; Busy=2; OOF=3; WorkingElsewhere=4,required
+MS-ASCAL/sensitivity.enum,MS-ASCAL,§2.2.2.46,Sensitivity enum Normal=0; Personal=1; Private=2; Confidential=3,required
+MS-ASCAL/meetingstatus.enum,MS-ASCAL,§2.2.2.32,MeetingStatus enum allowed values 0; 1; 3; 5; 7; 9; 11; 13; 15,required
+MS-ASCAL/recurrence.type.enum,MS-ASCAL,§2.2.2.43.4,Recurrence Type enum daily=0; weekly=1; monthly=2; monthlyByDay=3; yearly=5; yearlyByDay=6,required
+MS-ASCNTC/fields.14.1,MS-ASCNTC,§2.2.2,"Contact exposes FirstName; LastName; MiddleName; Title; CompanyName; JobTitle; Email1Address; Email2Address; Email3Address; HomePhoneNumber; MobilePhoneNumber; BusinessPhoneNumber; HomeStreet; HomeCity; HomePostalCode; HomeCountry",required
+MS-ASTASK/fields.14.1,MS-ASTASK,§2.2.2,"Task exposes Subject; StartDate; DueDate; UtcStartDate; UtcDueDate; Importance; Sensitivity; Complete; DateCompleted; ReminderSet; ReminderTime; Categories; Recurrence",required
+MS-ASTASK/importance.enum,MS-ASTASK,§2.2.2.6,Task Importance enum Low=0; Normal=1; High=2,required
+MS-ASPROV/policy-type,MS-ASPROV,§2.2.2.39,Provision Policy/PolicyType is MS-EAS-Provisioning-WBXML for EAS 14.1,required
+MS-ASPROV/two-phase-flow,MS-ASPROV,§3.2.5.1,Provision uses an initial download followed by an Acknowledge step that echoes PolicyKey and AcknowledgeStatus,required
+MS-ASPROV/policydoc.fields,MS-ASPROV,§2.2.2,"EASProvisionDoc carries 14.1 policy fields including DevicePasswordEnabled; AlphanumericDevicePasswordRequired; MinDevicePasswordLength; MaxInactivityTimeDeviceLock; MaxDevicePasswordFailedAttempts; AllowSimpleDevicePassword; RequireDeviceEncryption; AllowStorageCard; AllowCamera",required
+MS-ASCMD/foldersync.request,MS-ASCMD,§2.2.1.4,FolderSync request carries a single SyncKey element; initial SyncKey value is 0,required
+MS-ASCMD/foldersync.response,MS-ASCMD,§2.2.1.4,FolderSync response carries Status; SyncKey and a Changes container of Add/Update/Delete entries with ServerId/ParentId/DisplayName/Type,required
+MS-ASCMD/sync.request,MS-ASCMD,§2.2.1.21,Sync request carries Collections of Collection with SyncKey; CollectionId; optional GetChanges; WindowSize; Options; Commands,required
+MS-ASCMD/sync.response,MS-ASCMD,§2.2.1.21,Sync response carries Collections of Collection with SyncKey; CollectionId; Status; optional Commands of Add/Change/Delete/Fetch; optional MoreAvailable,required
+MS-ASCMD/sync.status,MS-ASCMD,§2.2.1.21.4,Sync Status enum 1=success; 3=invalid SyncKey; 4=protocol error; 5=server error; 6=conversion error; 7=conflict; 8=object not found,required
+MS-ASCMD/ping.request,MS-ASCMD,§2.2.1.13,Ping request carries HeartbeatInterval and Folders with Folder entries containing Id and Class,required
+MS-ASCMD/ping.response,MS-ASCMD,§2.2.1.13,Ping response carries Status and the list of Folders that have changes,required
+MS-ASCMD/ping.status.changes,MS-ASCMD,§2.2.1.13.6,Ping Status=2 indicates one or more folders have changes available,required
+MS-ASCMD/global.status.codes,MS-ASCMD,§2.2.4,Global Status codes include 142 invalid policy; 143 invalid policy key; 144 invalid device id,required
+MS-ASCMD/retry.142,MS-ASCMD,§2.2.4,Status 142 triggers automatic re-provision with a fresh PolicyKey before retrying the original command,required
+MS-ASCMD/scenario.full,MS-ASCMD,§3.1,End-to-end Provision -> FolderSync -> Sync -> Ping scenario over HTTP exchanges WBXML payloads with the negotiated PolicyKey and SyncKey,required
+MS-ASHTTP/client.profile.extra-headers,MS-ASHTTP,§2.2.2,Config.ExtraHeaders are merged after mandatory MS-ASHTTP headers without overwriting any header key already present on the request,required
+MS-ASHTTP/client.profile.force-http11,MS-ASHTTP,§2.2.1,When HTTPClient is nil and ForceHTTP11 is true New configures a client transport cloned from DefaultTransport with TLSNextProto set to a non-nil empty map to disable HTTP/2,required
+MS-ASHTTP/client.query-encoding,MS-ASHTTP,§2.2.1.1.1,Config.QueryEncoding selects base64 or plain text query encoding while defaulting to base64,required
+MS-ASHTTP/client.profile.device-headers,MS-ASHTTP,§2.2.2,Config device profile fields emit X-MS-DeviceModel; X-MS-DeviceOS; X-MS-DeviceOSLanguage; X-MS-DeviceCarrier; X-MS-DevicePhoneNumber; X-MS-DeviceUserAgent when set,required
+MS-ASCMD/status.165.device-information-required,MS-ASCMD,§2.2.4,Status 165 indicates the client must send DeviceInformation during Provision,required
+MS-ASPROV/provision.device-information,MS-ASPROV,§3.2.5.1,Provision requests carry Settings DeviceInformation with client model OS language user-agent and mobile operator metadata,required

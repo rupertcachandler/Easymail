@@ -29,3 +29,7 @@ Thumbs.db
 # Config with passwords
 *.local
 .env
+
+# Compiled binary + Wails-generated artifacts
+/build/
+frontend/package.json.md5

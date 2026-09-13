@@ -1,0 +1,25 @@
+# Build artifacts
+/bin/
+/dist/
+
+# Coverage
+cover.out
+cover-*.out
+cover.html
+coverage.txt
+
+# Fuzz corpus (generated)
+**/testdata/fuzz/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.test
+*.prof

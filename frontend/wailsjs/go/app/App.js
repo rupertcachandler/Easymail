@@ -6,6 +6,38 @@ export function AddAccount(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['AddAccount'](arg1, arg2, arg3, arg4);
 }
 
+export function CopyEmails(arg1, arg2) {
+  return window['go']['app']['App']['CopyEmails'](arg1, arg2);
+}
+
+export function CreateCalendarEvent(arg1, arg2, arg3) {
+  return window['go']['app']['App']['CreateCalendarEvent'](arg1, arg2, arg3);
+}
+
+export function CreateMailFolder(arg1, arg2, arg3) {
+  return window['go']['app']['App']['CreateMailFolder'](arg1, arg2, arg3);
+}
+
+export function DeleteCalendarEvent(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DeleteCalendarEvent'](arg1, arg2, arg3, arg4);
+}
+
+export function DeleteEmails(arg1, arg2) {
+  return window['go']['app']['App']['DeleteEmails'](arg1, arg2);
+}
+
+export function DownloadAttachment(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DownloadAttachment'](arg1, arg2, arg3);
+}
+
+export function FetchAttachment(arg1, arg2) {
+  return window['go']['app']['App']['FetchAttachment'](arg1, arg2);
+}
+
+export function GetCalendarEvents(arg1, arg2) {
+  return window['go']['app']['App']['GetCalendarEvents'](arg1, arg2);
+}
+
 export function GetContacts(arg1) {
   return window['go']['app']['App']['GetContacts'](arg1);
 }
@@ -22,20 +54,64 @@ export function GetFolders(arg1) {
   return window['go']['app']['App']['GetFolders'](arg1);
 }
 
+export function GetMessageSource(arg1, arg2, arg3) {
+  return window['go']['app']['App']['GetMessageSource'](arg1, arg2, arg3);
+}
+
+export function GetOOFSettings(arg1) {
+  return window['go']['app']['App']['GetOOFSettings'](arg1);
+}
+
+export function GetVersion() {
+  return window['go']['app']['App']['GetVersion']();
+}
+
 export function ListAccounts() {
   return window['go']['app']['App']['ListAccounts']();
+}
+
+export function MoveEmails(arg1, arg2) {
+  return window['go']['app']['App']['MoveEmails'](arg1, arg2);
+}
+
+export function OpenAttachment(arg1, arg2, arg3) {
+  return window['go']['app']['App']['OpenAttachment'](arg1, arg2, arg3);
+}
+
+export function OpenExternal(arg1) {
+  return window['go']['app']['App']['OpenExternal'](arg1);
 }
 
 export function RemoveAccount(arg1) {
   return window['go']['app']['App']['RemoveAccount'](arg1);
 }
 
+export function SaveHTMLAs(arg1, arg2) {
+  return window['go']['app']['App']['SaveHTMLAs'](arg1, arg2);
+}
+
 export function SearchContacts(arg1, arg2) {
   return window['go']['app']['App']['SearchContacts'](arg1, arg2);
 }
 
+export function SendMail(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['SendMail'](arg1, arg2, arg3, arg4);
+}
+
+export function SetOOFSettings(arg1, arg2) {
+  return window['go']['app']['App']['SetOOFSettings'](arg1, arg2);
+}
+
 export function Shutdown() {
   return window['go']['app']['App']['Shutdown']();
+}
+
+export function SyncCalendar(arg1, arg2) {
+  return window['go']['app']['App']['SyncCalendar'](arg1, arg2);
+}
+
+export function SyncContacts(arg1, arg2) {
+  return window['go']['app']['App']['SyncContacts'](arg1, arg2);
 }
 
 export function SyncEmails(arg1, arg2) {
@@ -44,4 +120,12 @@ export function SyncEmails(arg1, arg2) {
 
 export function SyncFolders(arg1) {
   return window['go']['app']['App']['SyncFolders'](arg1);
+}
+
+export function UpdateAccount(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['UpdateAccount'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function UpdateCalendarEvent(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['UpdateCalendarEvent'](arg1, arg2, arg3, arg4, arg5);
 }

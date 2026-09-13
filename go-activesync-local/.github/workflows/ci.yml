@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          check-latest: true
+      - name: Module verify
+        run: go mod verify
+      - name: Vet
+        run: go vet ./...
+      - name: Test (race) with coverage
+        run: go test -race -count=1 -covermode=atomic -coverprofile=cover.out ./...
+      - name: Coverage gate (per-package thresholds)
+        run: go run ./internal/spec/cmd/covergate cover.out
+      - name: Spec-lint
+        run: go run ./internal/spec/cmd/speclint
+      - name: Fuzz smoke (wbxml)
+        run: go test ./wbxml -run='^$' -fuzz=FuzzDecode -fuzztime=30s
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          check-latest: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.11.4
+          args: --timeout=5m
