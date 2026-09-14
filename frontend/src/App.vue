@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import * as AppBinding from '../wailsjs/go/app/App'
 import { EventsOn as WailsEventsOn, WindowFullscreen as WailsFullscreen, WindowUnfullscreen as WailsUnfullscreen } from '../wailsjs/runtime/runtime'
 
@@ -256,6 +256,7 @@ function removeEvent(ev: any) {
 // Compose
 const showCompose = ref(false)
 const composeTo = ref('')
+const composeToEl = ref<HTMLInputElement|null>(null)
 const composeSubject = ref('')
 const composeBody = ref('')
 const composeSending = ref(false)
@@ -1044,6 +1045,10 @@ function openCompose(to = '', subject = '', body = '') {
   // Preselect this account's default signature ('' = none)
   composeSigId.value = sigDefaultId()
   composeError.value = ''; composeSuccess.value = ''; showCompose.value = true
+  // Focus the To field so the composer doesn't sit unfocused (previously the
+  // first stray click landed on the overlay's @click.self and closed the
+  // modal — the "reply disappears before I can type" bug).
+  nextTick(() => { composeToEl.value?.focus() })
 }
 
 function signaturePreview() {
@@ -1684,13 +1689,13 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
   </div>
 
   <!-- ===== COMPOSE MODAL ===== -->
-  <div v-if="showCompose" class="modal-overlay" @click.self="showCompose = false">
+  <div v-if="showCompose" class="modal-overlay" @click.self.prevent>
     <div class="modal">
       <div class="modal-header">
         <h3>✏️ Compose</h3>
         <button class="icon-btn" @click="showCompose = false">✕</button>
       </div>
-      <div class="form-group"><label>To</label><input v-model="composeTo" placeholder="recipient@example.com" autocomplete="off" @focus="showComposeSug = true" @input="showComposeSug = true" @blur="onComposeToBlur" /></div>
+      <div class="form-group"><label>To</label><input ref="composeToEl" v-model="composeTo" placeholder="recipient@example.com" autocomplete="off" @focus="showComposeSug = true" @input="showComposeSug = true" @blur="onComposeToBlur" /></div>
       <div v-if="showComposeSug && composeSuggestions.length" class="compose-suggest">
         <button v-for="s in composeSuggestions" :key="s.address" class="suggest-item" @mousedown.prevent="pickSuggestion(s)">
           <span class="suggest-addr">{{ s.address }}</span>
