@@ -48,7 +48,7 @@ export function SaveHTMLAs(arg1:string,arg2:string):Promise<string>;
 
 export function SearchContacts(arg1:string,arg2:string):Promise<Array<models.Contact>>;
 
-export function SendMail(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
+export function SendMail(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string):Promise<void>;
 
 export function SetOOFSettings(arg1:string,arg2:models.OOFSettings):Promise<void>;
 

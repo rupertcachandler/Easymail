@@ -866,8 +866,8 @@ func (a *App) OpenAttachment(accountID, fileReference, suggestedName string) (st
 	return tmpPath, nil
 }
 
-func (a *App) SendMail(accountID, to, subject, body string) error {
-	log.Printf("SendMail: account=%s to=%s subject=%q", accountID, to, subject)
+func (a *App) SendMail(accountID, to, cc, bcc, subject, body string) error {
+	log.Printf("SendMail: account=%s to=%s cc=%s bcc=<%d chars> subject=%q", accountID, to, cc, len(bcc), subject)
 	acc, err := a.store.GetAccount(accountID)
 	if err != nil {
 		return fmt.Errorf("account not found: %w", err)
@@ -880,15 +880,24 @@ func (a *App) SendMail(accountID, to, subject, body string) error {
 	host = strings.Split(host, ":")[0]
 
 	from := acc.Email
-	toAddrs := strings.Split(to, ",")
-	for i := range toAddrs {
-		toAddrs[i] = strings.TrimSpace(toAddrs[i])
+	// To, Cc and Bcc all get delivered (RCPT); only To and Cc appear in the
+	// message headers — Bcc must never go into a delivered header.
+	var toAddrs []string
+	for _, group := range []string{to, cc, bcc} {
+		for _, a := range strings.Split(group, ",") {
+			if t := strings.TrimSpace(a); t != "" {
+				toAddrs = append(toAddrs, t)
+			}
+		}
 	}
 
 	// Build the message
 	header := make(map[string]string)
 	header["From"] = from
 	header["To"] = to
+	if cc != "" {
+		header["Cc"] = cc
+	}
 	header["Subject"] = subject
 	header["Date"] = time.Now().Format(time.RFC1123Z)
 	header["MIME-Version"] = "1.0"
@@ -970,7 +979,7 @@ func (a *App) SendMail(accountID, to, subject, body string) error {
 	}
 
 	log.Printf("SendMail: sent successfully to %s", to)
-	return a.fileSentCopyBestEffort(acc.ID, from, to, subject, body)
+	return a.fileSentCopyBestEffort(acc.ID, from, to, cc, subject, body)
 }
 
 // fileSentCopyBestEffort files a copy of the SMTP-sent message into the
@@ -978,7 +987,7 @@ func (a *App) SendMail(accountID, to, subject, body string) error {
 // best-effort: SMTP already delivered the mail, and a filing failure must not
 // turn a successful send into an error. If no EAS client or Sent folder is
 // available, it silently skips (the app still syncs Sent from the server).
-func (a *App) fileSentCopyBestEffort(accountID, from, to, subject, body string) error {
+func (a *App) fileSentCopyBestEffort(accountID, from, to, cc, subject, body string) error {
 	c, ok := a.clients[accountID]
 	if !ok {
 		log.Printf("SendMail: no EAS client for %s — skipping sent copy filing", accountID)
@@ -1000,7 +1009,7 @@ func (a *App) fileSentCopyBestEffort(accountID, from, to, subject, body string) 
 		log.Printf("SendMail: no Sent folder for %s — skipping sent copy filing", accountID)
 		return nil
 	}
-	if _, err := c.FileSentCopy(a.ctx, sent.ServerID, from, to, subject, body); err != nil {
+	if _, err := c.FileSentCopy(a.ctx, sent.ServerID, from, to, cc, subject, body); err != nil {
 		log.Printf("SendMail: best-effort sent copy filing failed (mail WAS sent): %v", err)
 		return nil
 	}

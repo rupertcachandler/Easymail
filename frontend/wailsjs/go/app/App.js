@@ -94,8 +94,8 @@ export function SearchContacts(arg1, arg2) {
   return window['go']['app']['App']['SearchContacts'](arg1, arg2);
 }
 
-export function SendMail(arg1, arg2, arg3, arg4) {
-  return window['go']['app']['App']['SendMail'](arg1, arg2, arg3, arg4);
+export function SendMail(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['app']['App']['SendMail'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function SetOOFSettings(arg1, arg2) {

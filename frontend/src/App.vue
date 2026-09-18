@@ -257,6 +257,9 @@ function removeEvent(ev: any) {
 const showCompose = ref(false)
 const composeTo = ref('')
 const composeToEl = ref<HTMLInputElement|null>(null)
+const composeCc = ref('')
+const composeBcc = ref('')
+const showCcBcc = ref(false)
 const composeSubject = ref('')
 const composeBody = ref('')
 const composeSending = ref(false)
@@ -1040,8 +1043,8 @@ function sigById(id: string): SavedSignature | undefined {
   return signatures.value.find(s => s.id === id)
 }
 
-function openCompose(to = '', subject = '', body = '') {
-  composeTo.value = to; composeSubject.value = subject; composeBody.value = body
+function openCompose(to = '', subject = '', body = '', cc = '') {
+  composeTo.value = to; composeSubject.value = subject; composeBody.value = body; composeCc.value = cc; composeBcc.value = ''
   // Preselect this account's default signature ('' = none)
   composeSigId.value = sigDefaultId()
   composeError.value = ''; composeSuccess.value = ''; showCompose.value = true
@@ -1104,7 +1107,9 @@ function setDefault(id: string) {
 
 function openReply() {
   if (!selectedEmail.value) return
-  openCompose(selectedEmail.value.fromEmail, 'Re: ' + selectedEmail.value.subject)
+  // Prefill CC from the email's CC recipients (if any) so replies keep the
+  // thread copied in — standard mail-client behaviour.
+  openCompose(selectedEmail.value.fromEmail, 'Re: ' + selectedEmail.value.subject, '', selectedEmail.value.cc || '')
 }
 
 function openForward() {
@@ -1400,7 +1405,7 @@ async function sendCompose() {
   try {
     // If they changed away from the default, remember that choice for this account.
     setSigDefaultId(composeSigId.value)
-    await wails.call('SendMail', selectedAccount.value, composeTo.value, composeSubject.value, signaturePreview())
+    await wails.call('SendMail', selectedAccount.value, composeTo.value, composeCc.value, composeBcc.value, composeSubject.value, signaturePreview())
     composeSuccess.value = 'Sent!'
     setTimeout(async () => {
       showCompose.value = false; composeSuccess.value = ''
@@ -1702,6 +1707,10 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
           <span class="suggest-name" v-if="s.label !== s.address">{{ s.label }}</span>
         </button>
       </div>
+      <div v-if="showCcBcc">
+        <div class="form-group"><label>Cc</label><input v-model="composeCc" placeholder="cc@example.com, cc2@example.com" autocomplete="off" /></div>
+        <div class="form-group"><label>Bcc</label><input v-model="composeBcc" placeholder="bcc@example.com" autocomplete="off" /></div>
+      </div>
       <div class="form-group"><label>Subject</label><input v-model="composeSubject" placeholder="Subject" /></div>
       <div class="form-group"><label>Message</label><textarea v-model="composeBody" rows="8" placeholder="Write your message..."></textarea></div>
       <div class="form-group">
@@ -1716,6 +1725,7 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
       <p v-if="composeError" class="error-text">{{ composeError }}</p>
       <p v-if="composeSuccess" class="success-msg">{{ composeSuccess }}</p>
       <div class="modal-actions">
+        <button class="action-btn muted" @click="showCcBcc = !showCcBcc">{{ showCcBcc ? '− Cc/Bcc' : '+ Cc/Bcc' }}</button>
         <button class="primary-btn" @click="sendCompose" :disabled="composeSending">{{ composeSending ? 'Sending...' : 'Send' }}</button>
         <button class="action-btn muted" @click="showCompose = false">Cancel</button>
       </div>

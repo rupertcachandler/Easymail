@@ -845,7 +845,7 @@ func (c *Client) CreateFolder(ctx context.Context, displayName, parentID string)
 // uses. SendMail keeps raw SMTP for actual delivery (reliable, and the copy
 // of record), then calls this so the message also exists in EAS Sent and
 // shows up in Unibox. Returns the new server id when SOGo echoes one.
-func (c *Client) FileSentCopy(ctx context.Context, sentCollectionID, fromAddr, to, subject, body string) (string, error) {
+func (c *Client) FileSentCopy(ctx context.Context, sentCollectionID, fromAddr, to, cc, subject, body string) (string, error) {
 	if !c.connected {
 		return "", fmt.Errorf("not connected")
 	}
@@ -853,6 +853,7 @@ func (c *Client) FileSentCopy(ctx context.Context, sentCollectionID, fromAddr, t
 	email := &eas.Email{
 		From:          fromAddr,
 		To:            to,
+		Cc:            cc,
 		Subject:       subject,
 		DateReceived:  time.Now().UTC().Format("20060102T150405Z"),
 		Read:          true,
