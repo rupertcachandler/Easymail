@@ -477,6 +477,22 @@ func (s *Store) CountEmails(folderID string) (int64, error) {
 	return n, err
 }
 
+// EmailExists reports whether an email (serverID within a folder) is already
+// stored. Used to distinguish a genuinely-NEW arrived message from a resync
+// refresh — the emails table uses INSERT OR REPLACE, so a resync rewrites
+// every row and can't be told apart from a fresh arrival without this lookup.
+func (s *Store) EmailExists(folderID, serverID string) (bool, error) {
+	var one int
+	err := s.db.QueryRow(`SELECT 1 FROM emails WHERE folder_id = ? AND server_id = ? LIMIT 1`, folderID, serverID).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Store) ListEmails(accountID, folderID string, offset, limit int) ([]*models.Email, error) {
 	rows, err := s.db.Query(`SELECT id, account_id, folder_id, server_id, from_name, from_email,
 		to_text, to_emails, cc_text, cc_emails, subject, thread_topic, date_received,

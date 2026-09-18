@@ -18,6 +18,8 @@ export function DownloadAttachment(arg1:string,arg2:string,arg3:string):Promise<
 
 export function FetchAttachment(arg1:string,arg2:string):Promise<Record<string, string>>;
 
+export function GetActivityLog(arg1:number):Promise<Array<string>>;
+
 export function GetCalendarEvents(arg1:string,arg2:string):Promise<Array<models.CalendarEvent>>;
 
 export function GetContacts(arg1:string):Promise<Array<models.Contact>>;

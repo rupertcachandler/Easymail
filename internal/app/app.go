@@ -42,6 +42,12 @@ type App struct {
 	// on the same folder — concurrent windows make it return 405 and the
 	// loser aborts mid-window, leaving the store on stale mail.
 	syncMu sync.Mutex
+
+	// activityLog is the human-readable activity log file (received/sent mail
+	// + EAS/SMTP server comms); lazily opened on first write.
+	activityLog  *os.File
+	activityPath string
+	activityMu   sync.Mutex
 }
 
 // New creates a new App instance
@@ -67,10 +73,20 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("cannot open database: %w", err)
 	}
 
-	return &App{
+	a := &App{
 		store:   s,
 		clients: make(map[string]*activesync.Client),
-	}, nil
+	}
+
+	// Activity log lives next to the DB — same dir, human-readable file.
+	// Kept separate from stdout/journald so the user can tail/review
+	// received/sent mail + server comms without app logs mixed in.
+	a.activityPath = filepath.Join(filepath.Dir(dbPath), "activity.log")
+	if err := a.logActivity("BOI startup"); err != nil {
+		log.Printf("BOI: activity log init failed (non-fatal): %v", err)
+	}
+
+	return a, nil
 }
 
 // Startup is called when the app starts
@@ -106,9 +122,67 @@ func (a *App) OnBeforeClose(ctx context.Context) bool {
 
 // Shutdown is called on exit
 func (a *App) Shutdown() {
+	if a.activityLog != nil {
+		a.activityLog.Close()
+		a.activityLog = nil
+	}
 	if a.store != nil {
 		a.store.Close()
 	}
+}
+
+// logActivity appends one timestamped human-readable line to the activity
+// log (next to the DB at ~/.config/boi/activity.log). The file is opened
+// lazily and appends under a mutex so concurrent poll/sync/send can't
+// interleave lines. Failures are logged to stderr but never fatal — an
+// unwritable activity log must not break mail.
+func (a *App) logActivity(line string) error {
+	a.activityMu.Lock()
+	defer a.activityMu.Unlock()
+	if a.activityPath == "" {
+		return nil
+	}
+	if a.activityLog == nil {
+		f, err := os.OpenFile(a.activityPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			return err
+		}
+		a.activityLog = f
+	}
+	// RFC3339 with local offset; no microseconds — keeps it readable.
+	_, err := fmt.Fprintf(a.activityLog, "%s  %s\n", time.Now().Format("2006-01-02 15:04:05"), line)
+	if err != nil {
+		return err
+	}
+	return a.activityLog.Sync()
+}
+
+// GetActivityLog returns the tail of the activity log (newest first) for the
+// in-app Activity viewer. It reads the file back so it also works on a fresh
+// app start where `lines` weren't all logged this session.
+func (a *App) GetActivityLog(limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if a.activityPath == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(a.activityPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{"No activity yet."}, nil
+		}
+		return nil, err
+	}
+	all := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	// Newest first, capped.
+	if len(all) > limit {
+		all = all[len(all)-limit:]
+	}
+	for i, j := 0, len(all)-1; i < j; i, j = i+1, j-1 {
+		all[i], all[j] = all[j], all[i]
+	}
+	return all, nil
 }
 
 // === Account Management ===
@@ -280,32 +354,66 @@ func (a *App) SyncEmails(accountID, serverID string) error {
 		return fmt.Errorf("email sync failed: %w", err)
 	}
 	log.Printf("SyncEmails: filter=%d got %d emails (%d deleted) for folder %s", filter, len(emails), len(deletedIDs), serverID)
-	a.applySyncResults(accountID, serverID, emails, deletedIDs)
+	a.applySyncResults(accountID, serverID, "manual", emails, deletedIDs)
 	runtime.EventsEmit(a.ctx, "emails-updated", accountID, serverID)
 	return nil
 }
 
 // applySyncResults saves newly-synced emails and mirrors server-side
 // deletions (EAS Sync Delete commands) so mail removed on the server
-// disappears from the local store instead of lingering forever.
-func (a *App) applySyncResults(accountID, serverID string, emails []*models.Email, deletedIDs []string) {
+// disappears from the local store instead of lingering forever. It also logs
+// genuinely-new arrivals to the activity log (a resync rewrites existing rows
+// via INSERT OR REPLACE, so EmailExists distinguishes real arrivals from
+// refresh noise) — trigger describes where the sync came from (poll/backfill/
+// manual) for the activity record.
+func (a *App) applySyncResults(accountID, serverID string, trigger string, emails []*models.Email, deletedIDs []string) {
 	folderID := accountID + "-" + serverID
-	var n int
+	fname := a.folderName(accountID, serverID)
+	var n, newN int
 	for _, e := range emails {
+		isNew := false
+		if ok, err := a.store.EmailExists(folderID, e.ServerID); err == nil && !ok {
+			isNew = true
+		}
 		if err := a.store.SaveEmail(e); err != nil {
 			log.Printf("Warning: cannot save email %s: %v", e.ServerID, err)
 		} else {
 			n++
+			if isNew {
+				newN++
+				who := e.FromEmail
+				if who == "" {
+					who = e.From
+				}
+				if err := a.logActivity(fmt.Sprintf("RECV folder=%s from=%s subject=%q via=%s", fname, who, e.Subject, trigger)); err != nil {
+					log.Printf("Warning: activity log write failed: %v", err)
+				}
+			}
 		}
 	}
 	if n > 0 {
-		log.Printf("applySyncResults: saved %d emails for folder %s", n, folderID)
+		log.Printf("applySyncResults: saved %d emails (%d new) for folder %s", n, newN, folderID)
 	}
 	if len(deletedIDs) > 0 {
 		if err := a.store.DeleteEmails(folderID, deletedIDs); err != nil {
 			log.Printf("applySyncResults: failed to apply %d deletions for %s: %v", len(deletedIDs), folderID, err)
 		}
 	}
+}
+
+// folderName resolves a folder's display name from its ServerID for use in
+// readable activity-log lines.
+func (a *App) folderName(accountID, serverID string) string {
+	folders, err := a.store.ListFolders(accountID)
+	if err != nil {
+		return serverID
+	}
+	for _, f := range folders {
+		if f.ServerID == serverID {
+			return f.Name
+		}
+	}
+	return serverID
 }
 
 // FetchAttachment downloads an attachment via ItemOperations Fetch and
@@ -979,6 +1087,12 @@ func (a *App) SendMail(accountID, to, cc, bcc, subject, body string) error {
 	}
 
 	log.Printf("SendMail: sent successfully to %s", to)
+	// Activity log: SMTP session summary + recipients. Bcc is deliberately
+	// reported only as a count — the addresses never appear in logs.
+	if err := a.logActivity(fmt.Sprintf("SEND to=%s cc=%s bcc=%d subject=%q via=SMTP %s:587 STARTTLS RCPT=%d data=ok",
+		to, cc, len(bcc), subject, host, len(toAddrs))); err != nil {
+		log.Printf("Warning: activity log write failed: %v", err)
+	}
 	return a.fileSentCopyBestEffort(acc.ID, from, to, cc, subject, body)
 }
 
@@ -1144,7 +1258,7 @@ func (a *App) pollMailOnce() {
 				log.Printf("pollMailOnce: sync %s (%s) failed: %v", accountID, f.Name, err)
 				continue
 			}
-			a.applySyncResults(accountID, f.ServerID, emails, deletedIDs)
+			a.applySyncResults(accountID, f.ServerID, "poll", emails, deletedIDs)
 			synced++
 			if len(emails) > 0 || len(deletedIDs) > 0 {
 				log.Printf("pollMailOnce: %s (%s) +%d -%d", accountID, f.Name, len(emails), len(deletedIDs))
@@ -1186,7 +1300,7 @@ func (a *App) runReconcileOnce() {
 				log.Printf("runReconcileOnce: sync %s (%s) failed: %v", accountID, f.Name, err)
 				continue
 			}
-			a.applySyncResults(accountID, f.ServerID, emails, deletedIDs)
+			a.applySyncResults(accountID, f.ServerID, "backfill", emails, deletedIDs)
 			runtime.EventsEmit(a.ctx, "emails-updated", accountID, f.ServerID)
 		}
 	}

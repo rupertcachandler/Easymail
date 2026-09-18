@@ -38,6 +38,7 @@ const wails = {
         OpenExternal: AppBinding.OpenExternal,
         SaveHTMLAs: AppBinding.SaveHTMLAs,
         GetMessageSource: AppBinding.GetMessageSource,
+        GetActivityLog: AppBinding.GetActivityLog,
         GetVersion: AppBinding.GetVersion,
         CopyEmails: AppBinding.CopyEmails,
         MoveEmails: AppBinding.MoveEmails,
@@ -286,6 +287,26 @@ function closeSettings() { showSettings.value = false }
 // Message source viewer: reconstruct the raw source of the currently-open
 // email (or, for outbound mail we identity as "You", the source BOI sends)
 // and explain each header in plain English.
+const showActivity = ref(false)
+const activityLines = ref<string[]>([])
+const activityLoading = ref(false)
+const activityError = ref('')
+
+async function openActivity() {
+  showActivity.value = true
+  activityError.value = ''
+  activityLoading.value = true
+  try {
+    const lines = await wails.call('GetActivityLog', 300) || []
+    activityLines.value = Array.isArray(lines) ? lines : []
+  } catch (e: any) {
+    activityError.value = e.message || String(e)
+  } finally {
+    activityLoading.value = false
+  }
+}
+function closeActivity() { showActivity.value = false }
+
 const showSource = ref(false)
 const sourceLoading = ref(false)
 const sourceError = ref('')
@@ -1559,6 +1580,7 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
 
       <!-- Settings gear + Source viewer + build number: tucked under the people list -->
       <div class="left-footer">
+        <button class="icon-btn gear-btn" @click="openActivity()" title="Activity log (received/sent + server comms)">🕘</button>
         <button class="icon-btn gear-btn" @click="openSource()" title="View message source & header explanation">📄</button>
         <button class="icon-btn gear-btn" @click="openSettingsAccounts()" title="Settings">⚙</button>
         <span class="left-version" title="BOI build">v{{ appVersion }}</span>
@@ -1952,6 +1974,35 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
     </div>
   </div>
 
+  <!-- ===== ACTIVITY LOG VIEWER ===== -->
+  <div v-if="showActivity" class="modal-overlay" @click.self="closeActivity()">
+    <div class="modal activity-modal">
+      <div class="modal-header">
+        <h3>🕘 Activity log</h3>
+        <button class="icon-btn" @click="closeActivity()">✕</button>
+      </div>
+      <div class="activity-meta muted" style="margin-bottom:8px">
+        Received (RECV) and sent (SEND) mail with the server comms behind each —
+        EAS sync trigger for incoming, SMTP session summary for outgoing.
+      </div>
+      <p v-if="activityError" class="error-text">{{ activityError }}</p>
+      <p v-else-if="activityLoading && activityLines.length === 0" class="empty-hint">Loading…</p>
+      <p v-else-if="activityLines.length === 0" class="empty-hint">No activity yet.</p>
+      <div v-else class="activity-scroll">
+        <div v-for="(line, i) in activityLines" :key="i" class="activity-line">
+          <span class="activity-kind" :class="line.includes('RECV') ? 'k-recv' : line.includes('SEND') ? 'k-send' : 'k-other'">
+            {{ line.includes('RECV') ? '▾ RECV' : line.includes('SEND') ? '▴ SEND' : '·' }}
+          </span>
+          <span class="activity-text">{{ line }}</span>
+        </div>
+      </div>
+      <div class="modal-actions" style="justify-content:space-between;margin-top:10px">
+        <span class="muted" style="font-size:12px">log: ~/.config/boi/activity.log</span>
+        <button class="action-btn" @click="openActivity()" :disabled="activityLoading">↻ Refresh</button>
+      </div>
+    </div>
+  </div>
+
   <div v-if="showSettings" class="modal-overlay" @click.self="closeSettings()">
     <div class="modal settings">
       <div class="modal-header">
@@ -2175,6 +2226,22 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
   white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto;
 }
 .hdr-explain { display: flex; flex-direction: column; gap: 4px; }
+.activity-modal { width: min(720px, 92vw); max-height: 82vh; display: flex; flex-direction: column; }
+.activity-scroll { overflow-y: auto; padding: 4px 16px 8px; display: flex; flex-direction: column; gap: 4px; }
+.activity-line {
+  display: flex; gap: 8px; align-items: baseline; padding: 4px 6px; border-radius: 6px;
+  font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+}
+.activity-line:nth-child(odd) { background: rgba(127,127,127,0.06); }
+.activity-kind {
+  flex: 0 0 64px; font-family: ui-monospace, monospace; font-weight: 700; font-size: 10.5px;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.activity-text { font-family: ui-monospace, monospace; font-size: 11.5px; }
+.k-recv { color: #2e9e5b; }
+.k-send { color: #3b82f6; }
+.k-other { color: #8b8f98; }
+.activity-meta { font-size: 12.5px; padding: 0 4px; }
 .hdr-row {
   display: flex; gap: 12px; align-items: baseline; padding: 5px 8px;
   border-radius: 8px; background: var(--bg-card-subtle, rgba(255,255,255,.02));
