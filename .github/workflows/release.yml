@@ -1,0 +1,118 @@
+name: release
+
+# Builds BOI for Linux (deb) and macOS (dmg) from source and attaches both
+# to a GitHub Release. Fires automatically when a v* tag is pushed.
+# Uses the auto-generated GITHUB_TOKEN — no personal token required.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  linux-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install WebKit/GTK build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Install frontend deps
+        run: cd frontend && npm install --no-audit --no-fund
+
+      - name: Build binary
+        run: |
+          export PATH=$HOME/go/bin:$PATH
+          wails build -tags "webkit2_41 production" -ldflags "-X easymail/internal/app.version=${GITHUB_REF_NAME#v}"
+
+      - name: Package .deb
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGE=/tmp/boi-deb
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/bin"
+          strip build/bin/easymail
+          cp build/bin/easymail "$STAGE/usr/bin/boi"
+          cat > "$STAGE/DEBIAN/control" <<CTRL
+          Package: boi
+          Version: $VERSION
+          Section: mail
+          Priority: optional
+          Architecture: amd64
+          Depends: libwebkit2gtk-4.1-0, libgtk-3-0
+          Maintainer: Rupert Chandler <rupert@btl.io>
+          Description: BOI - people-centric EAS email client
+           BOI (Belinda, Oliver, Imogen) is a Wails-based Exchange ActiveSync
+           email client with a unibox-style sender-centric UI.
+          CTRL
+          dpkg-deb --build --root-owner-group "$STAGE" boi_${VERSION}_amd64.deb
+
+      - name: Publish .deb
+        uses: softprops/action-gh-release@v2
+        with:
+          files: boi_*.deb
+          generate_release_notes: true
+
+  macos-dmg:
+    runs-on: macos-13  # x86_64 runner (matches the Intel target Mac)
+    # Runs after the linux job so the release already exists; softprops then
+    # adds just the .dmg asset (avoids a race creating the same release).
+    needs: linux-deb
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Install frontend deps
+        run: cd frontend && npm install --no-audit --no-fund
+
+      - name: Build .app
+        run: |
+          export PATH=$HOME/go/bin:$PATH
+          wails build -platform darwin/amd64 -ldflags "-X easymail/internal/app.version=${GITHUB_REF_NAME#v}"
+
+      - name: Package .dmg
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          APP=build/bin/EasyMail.app
+          # Ensure the bundle carries the release identity
+          STAGE=/tmp/boi-dmg
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/"
+          hdiutil create -volname "BOI" -srcfolder "$STAGE" -ov -format UDZO BOI-${VERSION}.dmg
+
+      - name: Publish .dmg
+        uses: softprops/action-gh-release@v2
+        with:
+          files: BOI-*.dmg
+          generate_release_notes: true
