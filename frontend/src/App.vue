@@ -1483,6 +1483,24 @@ onMounted(async () => {
   window.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'F11') { e.preventDefault(); toggleFullscreen() }
   })
+  // Email bodies are injected as raw HTML via v-html, so their <a href>
+  // links are live anchors inside the app's own WebView. Without interception
+  // a click navigates the whole Wails window to the external page (email view
+  // vanishes, back/forward breaks) — especially jarring on macOS. Route
+  // http(s) links to the system default browser via OpenExternal and stop the
+  // in-app navigation. mailto: links get the same browser treatment.
+  document.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null
+    const anchor = target && target.closest && target.closest('a[href]') as HTMLAnchorElement | null
+    if (!anchor) return
+    const href = anchor.getAttribute('href') || ''
+    if (/^(https?:|mailto:)/i.test(href)) {
+      e.preventDefault()
+      e.stopPropagation()
+      wails.call('OpenExternal', href)
+        .catch(() => { window.location.assign(href) })
+    }
+  })
 })
 // Never start a sync while one is already running — two concurrent drains on
 // the same folder make SOGo return 405 Not Allowed and the loser aborts
