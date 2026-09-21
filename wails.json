@@ -8,5 +8,12 @@
   "frontend:dev:serverUrl": "auto",
   "author": {
     "name": "Frau Blücher"
+  },
+  "info": {
+    "companyName": "BOI",
+    "productName": "BOI",
+    "productVersion": "0.4.63",
+    "copyright": "© Rupert Chandler",
+    "comments": "People-centric email client (BOI)"
   }
 }
