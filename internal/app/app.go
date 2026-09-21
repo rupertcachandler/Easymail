@@ -9,7 +9,6 @@ import (
 	"net/mail"
 	"net/smtp"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -481,9 +480,9 @@ func (a *App) DownloadAttachment(accountID, fileReference, suggestedName string)
 	// string means the user cancelled, which we treat as a clean "skip"
 	// (empty path, nil error) rather than a failure.
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:             "Save attachment",
-		DefaultDirectory:  defaultDir,
-		DefaultFilename:   filename,
+		Title:                "Save attachment",
+		DefaultDirectory:     defaultDir,
+		DefaultFilename:      filename,
 		CanCreateDirectories: true,
 	})
 	if err != nil {
@@ -528,9 +527,9 @@ func (a *App) SaveHTMLAs(content, suggestedName string) (string, error) {
 	}
 	defaultDir := filepath.Join(home, "Downloads")
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:             "Save message source",
-		DefaultDirectory:  defaultDir,
-		DefaultFilename:   filename,
+		Title:                "Save message source",
+		DefaultDirectory:     defaultDir,
+		DefaultFilename:      filename,
 		CanCreateDirectories: true,
 	})
 	if err != nil {
@@ -754,9 +753,9 @@ func (a *App) DeleteCalendarEvent(accountID, serverID, eventID, eventServerID st
 // EAS MoveItems is a true move — there is no server-side copy command in
 // ActiveSync, so "copy to folder" is not available here.
 func (a *App) MoveEmails(accountID string, moves []struct {
-	ServerID      string `json:"serverId"`
-	SrcFolderID   string `json:"srcFolderId"`
-	DstFolderID   string `json:"dstFolderId"`
+	ServerID    string `json:"serverId"`
+	SrcFolderID string `json:"srcFolderId"`
+	DstFolderID string `json:"dstFolderId"`
 }) error {
 	client, ok := a.clients[accountID]
 	if !ok {
@@ -852,8 +851,8 @@ func (a *App) CreateMailFolder(accountID, displayName, parentServerId string) (s
 // DeleteEmails deletes one or more emails from the server (moves them into the
 // account's Trash folder) and removes them from the local cache.
 func (a *App) DeleteEmails(accountID string, items []struct {
-	ServerID    string `json:"serverId"`
-	FolderID    string `json:"folderId"`
+	ServerID string `json:"serverId"`
+	FolderID string `json:"folderId"`
 }) error {
 	client, ok := a.clients[accountID]
 	if !ok {
@@ -964,13 +963,10 @@ func (a *App) OpenAttachment(accountID, fileReference, suggestedName string) (st
 		return "", fmt.Errorf("write temp: %w", err)
 	}
 
-	cmd := exec.Command("xdg-open", tmpPath)
-	if err := cmd.Start(); err != nil {
-		log.Printf("OpenAttachment: xdg-open failed: %v", err)
+	if err := openDefaultApp(tmpPath); err != nil {
+		log.Printf("OpenAttachment: open failed: %v", err)
 		return tmpPath, fmt.Errorf("open with default app failed: %w", err)
 	}
-	// Detach so the app doesn't wait on the opened program.
-	go cmd.Wait()
 	return tmpPath, nil
 }
 
