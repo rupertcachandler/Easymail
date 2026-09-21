@@ -762,6 +762,38 @@ func (s *Store) ReplaceCalendarEvents(accountID, folderID string, events []*mode
 	})
 }
 
+// GetCalendarEventByID returns a single stored calendar event by its primary
+// id, or nil when it is not present.
+func (s *Store) GetCalendarEventByID(id string) (*models.CalendarEvent, error) {
+	row := s.db.QueryRow(`SELECT id, account_id, server_id, subject, location, start_time, end_time,
+		all_day_event, organizer_name, organizer_email, busy_status, sensitivity, reminder, body, body_type, recurrence_type, attendees
+		FROM calendar_events WHERE id = ?`, id)
+	var e models.CalendarEvent
+	var location, orgName, orgEmail, body, bodyType, attendees sql.NullString
+	var reminder sql.NullInt64
+	var recurrence sql.NullInt64
+	if err := row.Scan(&e.ID, &e.AccountID, &e.ServerID, &e.Subject, &location, &e.StartTime, &e.EndTime,
+		&e.AllDayEvent, &orgName, &orgEmail, &e.BusyStatus, &e.Sensitivity, &reminder, &body, &bodyType, &recurrence, &attendees); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	e.Location = location.String
+	e.OrganizerName = orgName.String
+	e.OrganizerEmail = orgEmail.String
+	e.Body = body.String
+	e.BodyType = bodyType.String
+	if reminder.Valid {
+		e.Reminder = int(reminder.Int64)
+	}
+	if recurrence.Valid {
+		e.RecurrenceType = int(recurrence.Int64)
+	}
+	e.Attendees = parseAttendees(attendees.String)
+	return &e, nil
+}
+
 // DeleteCalendarEvent removes a single event from the store by its primary id.
 func (s *Store) DeleteCalendarEvent(id string) error {
 	_, err := s.db.Exec(`DELETE FROM calendar_events WHERE id = ?`, id)

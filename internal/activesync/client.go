@@ -751,8 +751,57 @@ func (c *Client) UpdateCalendarEvent(ctx context.Context, collectionID, serverID
 	return serverID, nil
 }
 
-// DeleteCalendarEvent removes an Appointment from the EAS calendar collection
-// via a Sync Delete command.
+// ResolveCalendarServerID returns the CURRENT ServerID of the event matching
+// ev's stable fingerprint (subject + start + end) by re-reading the calendar
+// collection. SOGo does NOT provide stable ServerIDs for calendar events — it
+// hands out a fresh id on nearly every read — so callers must re-resolve
+// right before a delete/change rather than trusting a previously-stored id.
+// Returns "" (no error) when no event matches.
+func (c *Client) ResolveCalendarServerID(ctx context.Context, collectionID string, ev *models.CalendarEvent) (string, error) {
+	if ev == nil {
+		return "", nil
+	}
+	subj := strings.ToLower(strings.TrimSpace(ev.Subject))
+	if subj == "" {
+		return "", nil
+	}
+	items, _, err := twoPhaseSyncMode[eas.Appointment](ctx, c, collectionID, 50, 0, true)
+	if err != nil {
+		return "", err
+	}
+	for _, it := range items {
+		if it.ApplicationData == nil {
+			continue
+		}
+		a := it.ApplicationData
+		if strings.ToLower(strings.TrimSpace(a.Subject)) != subj {
+			continue
+		}
+		if !sameEASInstant(ev.StartTime, a.StartTime) || !sameEASInstant(ev.EndTime, a.EndTime) {
+			continue
+		}
+		return it.ServerID, nil
+	}
+	return "", nil
+}
+
+// sameEASInstant reports whether a time.Time and an EAS instant string agree,
+// within a small tolerance (EAS truncates to minute resolution).
+func sameEASInstant(t time.Time, easStr string) bool {
+	if t.IsZero() {
+		return easStr == ""
+	}
+	et, err := parseEASTime(easStr)
+	if err != nil {
+		return false
+	}
+	d := t.Sub(et)
+	if d < 0 {
+		d = -d
+	}
+	return d <= 2*time.Minute
+}
+
 func (c *Client) DeleteCalendarEvent(ctx context.Context, collectionID, serverID string) error {
 	if !c.connected {
 		return fmt.Errorf("not connected")

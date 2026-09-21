@@ -695,6 +695,18 @@ func (a *App) UpdateCalendarEvent(accountID, serverID, eventID, oldServerID stri
 	if target == "" {
 		target = ev.ServerID
 	}
+	// SOGo rotates calendar ServerIDs on nearly every read. Re-resolve the
+	// CURRENT id from the server before the Change — the stored/requested one
+	// is usually stale and makes the change silently no-op. We match on the
+	// STORED event's fingerprint (subject/start/end as they were before the
+	// edit), because the caller may have just changed those fields.
+	if eventID != "" {
+		if st, err := a.store.GetCalendarEventByID(eventID); err == nil && st != nil {
+			if cur, err := client.ResolveCalendarServerID(a.ctx, serverID, st); err == nil && cur != "" {
+				target = cur
+			}
+		}
+	}
 	if target == "" {
 		return "", fmt.Errorf("event has no server id to update")
 	}
@@ -729,7 +741,19 @@ func (a *App) DeleteCalendarEvent(accountID, serverID, eventID, eventServerID st
 	if !ok {
 		return fmt.Errorf("account not connected")
 	}
-	if err := client.DeleteCalendarEvent(a.ctx, serverID, eventServerID); err != nil {
+	// SOGo rotates calendar ServerIDs on nearly every read. Re-resolve the
+	// CURRENT id from the server (by the stored event's fingerprint) instead
+	// of trusting the stored one, which is usually stale and makes the server
+	// silently no-op the delete.
+	target := eventServerID
+	if eventID != "" {
+		if st, err := a.store.GetCalendarEventByID(eventID); err == nil && st != nil {
+			if cur, err := client.ResolveCalendarServerID(a.ctx, serverID, st); err == nil && cur != "" {
+				target = cur
+			}
+		}
+	}
+	if err := client.DeleteCalendarEvent(a.ctx, serverID, target); err != nil {
 		log.Printf("DeleteCalendarEvent: failed: %v", err)
 		return err
 	}
