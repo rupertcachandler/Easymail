@@ -611,25 +611,32 @@ const mailFolders = computed(() => folders.value.filter(f => !f.isHidden && SYNC
 // === Folder tree ===
 // parentId drives a nested tree so subfolders render indented under their
 // parent (the data was always in the DB, this is purely display).
-const folderChildren = (parentId: string): Folder[] => {
-  return mailFolders.value.filter(f => (f.parentId || '') === parentId)
+// Folder hierarchy is keyed by SERVER id: the DB stores folders.parent_id as
+// the parent's server_id (e.g. mail%2F...), NOT the local row id. So the tree
+// must match f.parentId against the parent's serverId; '', '0' or a dangling
+// parent id all count as a root (folder present but parent not in the list).
+const folderChildren = (parentServerId: string): Folder[] => {
+  return mailFolders.value.filter(f => (f.parentId || '') === parentServerId)
 }
-const folderRoots = computed(() => mailFolders.value.filter(f => !f.parentId || !mailFolders.value.some(p => p.id === f.parentId)))
+const folderRoots = computed(() => mailFolders.value.filter((f) => {
+  const p = f.parentId || ''
+  return p === '' || p === '0' || !mailFolders.value.some(x => x.serverId === p)
+}))
 // Flat indented list used by the flat pickers (folder manager / move target).
 const indentedFolders = computed(() => {
   const out: { f: Folder; depth: number }[] = []
-  const walk = (parentId: string, depth: number) => {
-    for (const f of folderChildren(parentId)) {
+  const walk = (parentServerId: string, depth: number) => {
+    for (const f of folderChildren(parentServerId)) {
       out.push({ f, depth })
-      walk(f.id, depth + 1)
+      walk(f.serverId, depth + 1)
     }
   }
-  for (const f of folderRoots.value) { out.push({ f, depth: 0 }); walk(f.id, 1) }
+  for (const f of folderRoots.value) { out.push({ f, depth: 0 }); walk(f.serverId, 1) }
   return out
 })
 const folderIcon = (f: Folder): string => f.type === 2 ? '📥' : f.type === 5 ? '📤' : f.type === 3 ? '📝' : f.type === 4 ? '🗑' : '📁'
 const folderCollapsed = ref<Set<string>>(new Set())
-const folderHasChildren = (f: Folder): boolean => folderChildren(f.id).length > 0
+const folderHasChildren = (f: Folder): boolean => folderChildren(f.serverId).length > 0
 const toggleFolder = (f: Folder) => {
   const s = new Set(folderCollapsed.value)
   if (s.has(f.id)) s.delete(f.id); else s.add(f.id)
@@ -638,13 +645,13 @@ const toggleFolder = (f: Folder) => {
 // Flattened tree for the sync list, honouring collapsed state at any depth.
 const visibleFolderTree = computed(() => {
   const out: { f: Folder; depth: number }[] = []
-  const walk = (parentId: string, depth: number) => {
-    for (const f of folderChildren(parentId)) {
+  const walk = (parentServerId: string, depth: number) => {
+    for (const f of folderChildren(parentServerId)) {
       out.push({ f, depth })
-      if (!folderCollapsed.value.has(f.id)) walk(f.id, depth + 1)
+      if (!folderCollapsed.value.has(f.id)) walk(f.serverId, depth + 1)
     }
   }
-  for (const f of folderRoots.value) walk(f.id, 0)
+  for (const f of folderRoots.value) walk(f.serverId, 0)
   return out
 })
 
@@ -2088,135 +2095,157 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
       <!-- ==== ACCOUNTS TAB ==== -->
       <div v-if="settingsTab === 'accounts'" class="settings-pane">
         <div v-if="addAccountError" class="error-banner">{{ addAccountError }}</div>
-
-        <!-- account list -->
-        <div class="acc-list">
-          <div v-for="a in accounts" :key="a.id" class="acc-item">
-            <div class="acc-item-main">
-              <span class="acc-item-name">{{ a.name || a.email }}</span>
-              <span class="acc-item-email">{{ a.email }}</span>
-              <span v-if="a.id === selectedAccount" class="acc-item-current">current</span>
-              <span v-if="a.connected" class="acc-item-connected">● connected</span>
+        <div class="settings-cols">
+          <!-- left: colour-coded account list -->
+          <div class="settings-col">
+            <div class="folder-panel-title" style="margin-bottom:6px">Accounts</div>
+            <div class="acc-list">
+              <div v-for="a in accounts" :key="a.id" class="acc-item">
+                <span class="account-dot" :style="{ background: accountColour(a.email) }"></span>
+                <div class="acc-item-main">
+                  <span class="acc-item-name">{{ a.name || a.email }}</span>
+                  <span class="acc-item-email">{{ a.email }}</span>
+                  <span v-if="a.id === selectedAccount" class="acc-item-current">current</span>
+                  <span v-if="a.connected" class="acc-item-connected">● connected</span>
+                </div>
+                <button class="icon-btn" @click="startAccountEditor(a)" title="Edit account">✏️</button>
+                <button class="icon-btn" @click="deleteAccount(a)" title="Remove account">🗑</button>
+              </div>
             </div>
-            <button class="icon-btn" @click="startAccountEditor(a)" title="Edit account">✏️</button>
-            <button class="icon-btn" @click="deleteAccount(a)" title="Remove account">🗑</button>
+            <p class="muted" style="font-size:12px;margin-top:8px">Colours are assigned automatically per mailbox, so the same account looks the same on every machine.</p>
           </div>
-        </div>
-
-        <!-- account editor -->
-        <div class="form-group"><label>{{ editingAccountId ? 'Edit account' : 'Add account' }}</label>
-          <input v-model="newAccountName" placeholder="Your name (e.g. Rupert Chandler)" />
-        </div>
-        <div class="form-group"><label>Email</label><input v-model="newAccountEmail" placeholder="you@example.com" /></div>
-        <div class="form-group"><label>Password</label><input type="password" v-model="newAccountPassword" :placeholder="editingAccountId ? 'Leave blank to keep current' : 'App password'" /></div>
-        <div class="form-group"><label>Server</label><input v-model="newAccountServer" /></div>
-        <div class="modal-actions" style="justify-content:flex-start">
-          <button class="primary-btn" @click="saveAccount" :disabled="addingAccount">{{ addingAccount ? 'Saving...' : (editingAccountId ? 'Save Changes' : 'Add Account') }}</button>
-          <button class="action-btn muted" v-if="editingAccountId" @click="startNewAccount()">Cancel Edit</button>
+          <!-- right: editor -->
+          <div class="settings-col">
+            <div class="folder-panel-title" style="margin-bottom:6px">{{ editingAccountId ? 'Edit account' : 'Add account' }}</div>
+            <div class="form-group"><label>Name</label>
+              <input v-model="newAccountName" placeholder="Your name (e.g. Rupert Chandler)" />
+            </div>
+            <div class="form-group"><label>Email</label><input v-model="newAccountEmail" placeholder="you@example.com" /></div>
+            <div class="form-group"><label>Password</label><input type="password" v-model="newAccountPassword" :placeholder="editingAccountId ? 'Leave blank to keep current' : 'App password'" /></div>
+            <div class="form-group"><label>Server</label><input v-model="newAccountServer" /></div>
+            <div class="modal-actions" style="justify-content:flex-start">
+              <button class="primary-btn" @click="saveAccount" :disabled="addingAccount">{{ addingAccount ? 'Saving...' : (editingAccountId ? 'Save Changes' : 'Add Account') }}</button>
+              <button class="action-btn muted" v-if="editingAccountId" @click="startNewAccount()">Cancel Edit</button>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- ==== SYNC / MAIL & FOLDERS TAB ==== -->
       <div v-if="settingsTab === 'sync'" class="settings-pane">
-        <div class="folder-panel-title" style="margin-bottom:6px">New folder</div>
-        <p class="muted" style="font-size:12px;margin-bottom:8px">Create a folder on the server to file mail into. Pick a parent to make it a subfolder.</p>
-        <div class="mailman-row">
-          <select v-model="newFolderParentId" class="folder-sel" style="width:38%">
-            <option value="">Mailbox root</option>
-            <option v-for="item in indentedFolders" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ item.f.name }}</option>
-          </select>
-          <input v-model="newFolderName" class="folder-sel" style="flex:1" placeholder="e.g. Invoices" @keyup.enter="createFolder" />
-          <button class="primary-btn" @click="createFolder" :disabled="folderBusy">{{ folderBusy ? 'Creating…' : 'Create' }}</button>
-        </div>
+        <div class="settings-cols">
+          <!-- left column: what's synced + viewed mailbox -->
+          <div class="settings-col">
+            <div class="folder-panel-title" style="margin-bottom:6px">Sync folders</div>
+            <p class="muted" style="font-size:12px;margin-bottom:10px">Choose which mail folders BOI keeps in sync. Mail in unselected folders stays on the server and won't appear in BOI.</p>
+            <div class="folder-panel" style="border:none;background:transparent;padding:0;max-height:none;overflow:visible">
+              <template v-for="item in visibleFolderTree" :key="item.f.id">
+                <label :class="['folder-check', { 'folder-indent': item.depth > 0 }]" :style="{ paddingLeft: (8 + item.depth * 16) + 'px' }">
+                  <button v-if="folderHasChildren(item.f)" class="folder-twisty" @click.prevent="toggleFolder(item.f)">{{ folderCollapsed.has(item.f.id) ? '▸' : '▾' }}</button>
+                  <span v-else class="folder-twisty folder-twisty-spacer">·</span>
+                  <input type="checkbox" :checked="syncedFolderIds.includes(item.f.id)" @change="toggleFolderSync(item.f.id)" />
+                  <span class="folder-icon">{{ folderIcon(item.f) }}</span>
+                  <span class="folder-name">{{ item.f.name }}</span>
+                  <span v-if="item.f.unreadCount" class="folder-unread">{{ item.f.unreadCount }}</span>
+                </label>
+              </template>
+            </div>
 
-        <div class="folder-panel-title" style="margin-bottom:6px">Manage mail in a folder</div>
-        <p class="muted" style="font-size:12px;margin-bottom:8px">Open any folder and copy, move or delete its mail — one at a time or many at once.</p>
-        <div class="mailman-row">
-          <select v-model="managerFolderId" class="folder-sel" style="flex:1" @change="managerLoad()">
-            <option v-for="item in indentedFolders" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ folderIcon(item.f) }} {{ item.f.name }}</option>
-          </select>
-          <button class="action-btn" @click="managerLoad()" :disabled="managerLoading">{{ managerLoading ? 'Loading…' : '↻ Refresh' }}</button>
-        </div>
-
-        <div v-if="managerShow" class="manager-panel">
-          <div v-if="managerError" class="error-banner">{{ managerError }}</div>
-          <div v-if="managerMsg" class="success-msg" style="margin:6px 0">{{ managerMsg }}</div>
-
-          <div class="mailman-row manager-toolbar">
-            <button class="pill" :class="{ active: managerAllChecked }" @click="managerSelectAll">
-              {{ managerSel.length ? managerSel.length + ' selected' : 'Select all' }}
-            </button>
-            <select v-model="managerDstFolderId" class="folder-sel" style="flex:1" title="Destination folder (for copy/move)">
-              <option value="">Destination folder…</option>
-              <option v-for="item in indentedFolders.filter(i => i.f.id !== managerFolderId)" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ item.f.name }}</option>
-            </select>
-            <button class="action-btn" @click="managerCopyOrMove('copy')" :disabled="managerBusy" title="Copy selected mail to the destination">⧉ Copy</button>
-            <button class="action-btn" @click="managerCopyOrMove('move')" :disabled="managerBusy" title="Move selected mail to the destination">➤ Move</button>
-            <button class="action-btn danger-btn" @click="managerDelete" :disabled="managerBusy" title="Move selected mail to Trash">🗑 Delete</button>
+            <div class="folder-panel-title" style="margin:18px 0 6px">Viewed mailbox</div>
+            <p class="muted" style="font-size:12px;margin-bottom:8px">Filter the people list to a single folder, or show all synced mail.</p>
+            <div class="folder-row" style="padding:0">
+              <button :class="['pill', { active: !selectedFolder }]" @click="clearFolder()">All Mail</button>
+              <select v-model="selectedFolder" class="folder-sel" @change="selectedPerson = null; selectedEmail = null">
+                <option value="">All synced</option>
+                <option v-for="item in indentedFolders.filter(i => syncedFolderIds.includes(i.f.id))" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ item.f.name }}</option>
+              </select>
+            </div>
+            <div class="modal-actions" style="justify-content:flex-end;margin-top:10px">
+              <button class="primary-btn" @click="syncAll">Sync now</button>
+            </div>
           </div>
+          <!-- right column: create folder + folder manager -->
+          <div class="settings-col">
+            <div class="folder-panel-title" style="margin-bottom:6px">New folder</div>
+            <p class="muted" style="font-size:12px;margin-bottom:8px">Create a folder on the server to file mail into. Pick a parent to make it a subfolder.</p>
+            <div class="mailman-row">
+              <select v-model="newFolderParentId" class="folder-sel" style="width:38%">
+                <option value="">Mailbox root</option>
+                <option v-for="item in indentedFolders" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ item.f.name }}</option>
+              </select>
+              <input v-model="newFolderName" class="folder-sel" style="flex:1" placeholder="e.g. Invoices" @keyup.enter="createFolder" />
+              <button class="primary-btn" @click="createFolder" :disabled="folderBusy">{{ folderBusy ? 'Creating…' : 'Create' }}</button>
+            </div>
 
-          <div v-if="managerLoading" class="empty-hint">Loading folder…</div>
-          <div v-else-if="!managerEmails.length" class="empty-hint" style="padding:14px">This folder is empty.</div>
-          <div v-else class="manager-list">
-            <label v-for="e in managerEmails" :key="e.id" class="manager-mail">
-              <input type="checkbox" :checked="managerSel.includes(e.id + '\u0000' + e.serverId)" @change="managerToggle(e.id + '\u0000' + e.serverId)" />
-              <span class="manager-subj" :class="{ unread: !e.isRead }">{{ fmtMailmanSubject(e) }}</span>
-              <span class="manager-from">{{ e.fromEmail || e.from }}</span>
-              <span class="manager-date">{{ formatDate(e.dateReceived) }}</span>
-            </label>
+            <div class="folder-panel-title" style="margin:18px 0 6px">Manage mail in a folder</div>
+            <p class="muted" style="font-size:12px;margin-bottom:8px">Open any folder and copy, move or delete its mail — one at a time or many at once.</p>
+            <div class="mailman-row">
+              <select v-model="managerFolderId" class="folder-sel" style="flex:1" @change="managerLoad()">
+                <option v-for="item in indentedFolders" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ folderIcon(item.f) }} {{ item.f.name }}</option>
+              </select>
+              <button class="action-btn" @click="managerLoad()" :disabled="managerLoading">{{ managerLoading ? 'Loading…' : '↻ Refresh' }}</button>
+            </div>
+
+            <div v-if="managerShow" class="manager-panel">
+              <div v-if="managerError" class="error-banner">{{ managerError }}</div>
+              <div v-if="managerMsg" class="success-msg" style="margin:6px 0">{{ managerMsg }}</div>
+
+              <div class="mailman-row manager-toolbar">
+                <button class="pill" :class="{ active: managerAllChecked }" @click="managerSelectAll">
+                  {{ managerSel.length ? managerSel.length + ' selected' : 'Select all' }}
+                </button>
+                <select v-model="managerDstFolderId" class="folder-sel" style="flex:1" title="Destination folder (for copy/move)">
+                  <option value="">Destination folder…</option>
+                  <option v-for="item in indentedFolders.filter(i => i.f.id !== managerFolderId)" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ item.f.name }}</option>
+                </select>
+                <button class="action-btn" @click="managerCopyOrMove('copy')" :disabled="managerBusy" title="Copy selected mail to the destination">⧉ Copy</button>
+                <button class="action-btn" @click="managerCopyOrMove('move')" :disabled="managerBusy" title="Move selected mail to the destination">➤ Move</button>
+                <button class="action-btn danger-btn" @click="managerDelete" :disabled="managerBusy" title="Move selected mail to Trash">🗑 Delete</button>
+              </div>
+
+              <div v-if="managerLoading" class="empty-hint">Loading folder…</div>
+              <div v-else-if="!managerEmails.length" class="empty-hint" style="padding:14px">This folder is empty.</div>
+              <div v-else class="manager-list">
+                <label v-for="e in managerEmails" :key="e.id" class="manager-mail">
+                  <input type="checkbox" :checked="managerSel.includes(e.id + '\u0000' + e.serverId)" @change="managerToggle(e.id + '\u0000' + e.serverId)" />
+                  <span class="manager-subj" :class="{ unread: !e.isRead }">{{ fmtMailmanSubject(e) }}</span>
+                  <span class="manager-from">{{ e.fromEmail || e.from }}</span>
+                  <span class="manager-date">{{ formatDate(e.dateReceived) }}</span>
+                </label>
+              </div>
+            </div>
+            <button v-if="!managerShow" class="action-btn muted" style="margin-top:4px" @click="managerOpen()">Open folder manager</button>
           </div>
-        </div>
-        <button v-if="!managerShow" class="action-btn muted" style="margin-top:4px" @click="managerOpen()">Open folder manager</button>
-
-        <div class="folder-panel-title" style="margin-bottom:6px">Viewed mailbox</div>
-        <p class="muted" style="font-size:12px;margin-bottom:8px">Filter the people list to a single folder, or show all synced mail.</p>
-        <div class="folder-row" style="padding:0 0 12px">
-          <button :class="['pill', { active: !selectedFolder }]" @click="clearFolder()">All Mail</button>
-          <select v-model="selectedFolder" class="folder-sel" @change="selectedPerson = null; selectedEmail = null">
-            <option value="">All synced</option>
-            <option v-for="item in indentedFolders.filter(i => syncedFolderIds.includes(i.f.id))" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ item.f.name }}</option>
-          </select>
-        </div>
-
-        <div class="folder-panel-title" style="margin-bottom:6px">Sync folders</div>
-        <p class="muted" style="font-size:12px;margin-bottom:10px">Choose which mail folders BOI keeps in sync. Mail in unselected folders stays on the server and won't appear in BOI.</p>
-        <div class="folder-panel" style="border:none;background:transparent;padding:0;max-height:none;overflow:visible">
-          <template v-for="item in visibleFolderTree" :key="item.f.id">
-            <label :class="['folder-check', { 'folder-indent': item.depth > 0 }]" :style="{ paddingLeft: (8 + item.depth * 16) + 'px' }">
-              <button v-if="folderHasChildren(item.f)" class="folder-twisty" @click.prevent="toggleFolder(item.f)">{{ folderCollapsed.has(item.f.id) ? '▸' : '▾' }}</button>
-              <span v-else class="folder-twisty folder-twisty-spacer">·</span>
-              <input type="checkbox" :checked="syncedFolderIds.includes(item.f.id)" @change="toggleFolderSync(item.f.id)" />
-              <span class="folder-icon">{{ folderIcon(item.f) }}</span>
-              <span class="folder-name">{{ item.f.name }}</span>
-              <span v-if="item.f.unreadCount" class="folder-unread">{{ item.f.unreadCount }}</span>
-            </label>
-          </template>
-        </div>
-        <div class="modal-actions" style="justify-content:flex-end">
-          <button class="primary-btn" @click="syncAll">Sync now</button>
         </div>
       </div>
 
       <!-- ==== SIGNATURES TAB ==== -->
       <div v-if="settingsTab === 'signatures'" class="settings-pane">
-        <!-- editor: Name is ALWAYS enabled (was the bug — it started disabled) -->
-        <div class="form-group"><label>{{ sigEditIsNew ? 'New signature — name' : 'Signature name' }}</label><input v-model="sigEditName" placeholder="e.g. Work, Personal, Freelance" /></div>
-        <div class="form-group"><label>Signature text</label><textarea v-model="sigEditText" rows="4" placeholder="The signature text..." /></div>
-        <div class="modal-actions" style="justify-content:flex-start">
-          <button class="primary-btn" @click="saveSigEdit">Save Signature</button>
-          <button class="action-btn muted" @click="startNewSig">New</button>
-        </div>
-
-        <!-- list -->
-        <div class="sig-list">
-          <div v-for="s in signatures" :key="s.id" class="sig-item">
-            <span class="sig-item-name">{{ s.name }}</span>
-            <span class="sig-item-preview">{{ s.text.split('\n')[0] }}</span>
-            <button class="icon-btn" @click="setDefault(s.id)" :title="s.id === sigDefaultId() ? 'Current default' : 'Set as default'">{{ s.id === sigDefaultId() ? '★' : '☆' }}</button>
-            <button class="icon-btn" @click="startEditSig(s)" title="Edit">✏️</button>
-            <button class="icon-btn" @click="deleteSig(s.id)" title="Delete">🗑</button>
+        <div class="settings-cols">
+          <!-- left: editor -->
+          <div class="settings-col">
+            <div class="folder-panel-title" style="margin-bottom:6px">{{ sigEditIsNew ? 'New signature' : 'Edit signature' }}</div>
+            <div class="form-group"><label>Name</label><input v-model="sigEditName" placeholder="e.g. Work, Personal, Freelance" /></div>
+            <div class="form-group"><label>Signature text</label><textarea v-model="sigEditText" rows="4" placeholder="The signature text..." /></div>
+            <div class="modal-actions" style="justify-content:flex-start">
+              <button class="primary-btn" @click="saveSigEdit">Save Signature</button>
+              <button class="action-btn muted" @click="startNewSig">New</button>
+            </div>
           </div>
-          <p v-if="signatures.length === 0" class="muted">No saved signatures yet — add one above.</p>
+          <!-- right: saved list -->
+          <div class="settings-col">
+            <div class="folder-panel-title" style="margin-bottom:6px">Saved signatures</div>
+            <div class="sig-list">
+              <div v-for="s in signatures" :key="s.id" class="sig-item">
+                <span class="sig-item-name">{{ s.name }}</span>
+                <span class="sig-item-preview">{{ s.text.split('\n')[0] }}</span>
+                <button class="icon-btn" @click="setDefault(s.id)" :title="s.id === sigDefaultId() ? 'Current default' : 'Set as default'">{{ s.id === sigDefaultId() ? '★' : '☆' }}</button>
+                <button class="icon-btn" @click="startEditSig(s)" title="Edit">✏️</button>
+                <button class="icon-btn" @click="deleteSig(s.id)" title="Delete">🗑</button>
+              </div>
+              <p v-if="signatures.length === 0" class="muted">No saved signatures yet — add one on the left.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
