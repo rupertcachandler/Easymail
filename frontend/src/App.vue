@@ -257,19 +257,20 @@ async function saveNewEvent() {
 async function deleteEditingEvent() {
   const ev = editingEvent.value
   if (!ev || !ev.serverId) { newEventError.value = 'This event has no server id to delete'; return }
-  if (!confirm(`Delete "${ev.subject || '(no subject)'}"? This removes it from your calendar.`)) return
-  newEventSaving.value = true; newEventError.value = ''
-  try {
-    if (calendarFolder.value) {
-      await wails.call('DeleteCalendarEvent', selectedAccount.value, calendarFolder.value.serverId, ev.id, ev.serverId)
+  confirmAsk(`Delete "${ev.subject || '(no subject)'}"? This removes it from your calendar.`, async () => {
+    newEventSaving.value = true; newEventError.value = ''
+    try {
+      if (calendarFolder.value) {
+        await wails.call('DeleteCalendarEvent', selectedAccount.value, calendarFolder.value.serverId, ev.id, ev.serverId)
+      }
+      try { calendarEvents.value = await wails.call('GetCalendarEvents', selectedAccount.value, selectedAccount.value + '-cal') || [] } catch (e) { /* ok */ }
+      closeNewEvent()
+    } catch (e: any) {
+      newEventError.value = e.message || 'Failed to delete event'
+    } finally {
+      newEventSaving.value = false
     }
-    try { calendarEvents.value = await wails.call('GetCalendarEvents', selectedAccount.value, selectedAccount.value + '-cal') || [] } catch (e) { /* ok */ }
-    closeNewEvent()
-  } catch (e: any) {
-    newEventError.value = e.message || 'Failed to delete event'
-  } finally {
-    newEventSaving.value = false
-  }
+  })
 }
 function removeEvent(ev: any) {
   editingEvent.value = ev
@@ -497,13 +498,14 @@ async function saveAccount() {
   addingAccount.value = false
 }
 async function deleteAccount(a: any) {
-  if (!confirm(`Remove account \"${a.email}\"? This deletes its cached mail.`)) return
-  try {
-    await wails.call('RemoveAccount', a.id)
-    accounts.value = await wails.call('ListAccounts') || []
-    if (selectedAccount.value === a.id) selectedAccount.value = accounts.value[0]?.id || ''
-    if (accounts.value.length) await syncAll()
-  } catch (e: any) { addAccountError.value = e.message || String(e) }
+  confirmAsk(`Remove account \"${a.email}\"? This deletes its cached mail.`, async () => {
+    try {
+      await wails.call('RemoveAccount', a.id)
+      accounts.value = await wails.call('ListAccounts') || []
+      if (selectedAccount.value === a.id) selectedAccount.value = accounts.value[0]?.id || ''
+      if (accounts.value.length) await syncAll()
+    } catch (e: any) { addAccountError.value = e.message || String(e) }
+  })
 }
 
 // === UNIBOX: People-centric grouping (sent + received merged) ===
@@ -864,6 +866,23 @@ const newFolderParentId = ref('') // '' = mailbox root; else the parent mail fol
 const folderBusy = ref(false)
 const moveError = ref('')
 
+// ---- In-app confirmation (replaces native confirm()) ----
+// WebKitGTK in the Wails window does NOT implement JavaScript's confirm() —
+// it silently returns false. Every delete/move/remove gated on it therefore
+// no-opped: nothing reached Go, and moveError was set but never rendered, so
+// failures were completely invisible.
+const confirmBox = ref<{ message: string; onYes: () => void } | null>(null)
+function confirmAsk(message: string, onYes: () => void) {
+  confirmBox.value = { message, onYes }
+}
+function confirmYes() {
+  const c = confirmBox.value
+  if (!c) return
+  confirmBox.value = null
+  c.onYes()
+}
+function confirmNo() { confirmBox.value = null }
+
 // moveTargets is what Settings → Mail & Folders operates on: the emails the
 // user highlighted on the mail page (Ctrl/Cmd-click). Nothing is carried
 // between pages — Settings simply reflects the live selection.
@@ -936,14 +955,15 @@ function managerItems(): { id: string; email: Email }[] {
 async function managerDelete() {
   const items = managerItems()
   if (!items.length) { managerError.value = 'Select at least one email (or tick Select all).'; return }
-  if (!confirm(`Delete ${items.length} email${items.length > 1 ? 's' : ''}? This moves them to Trash.`)) return
-  managerBusy.value = true; managerError.value = ''; managerMsg.value = ''
-  try {
-    await wails.call('DeleteEmails', selectedAccount.value, items.map(it => ({ serverId: it.email.serverId, folderId: folderServerID(it.email.folderId) })))
-    managerMsg.value = `Deleted ${items.length} to Trash.`
-    await managerLoad()
-  } catch (err: any) { managerError.value = err?.message || 'Delete failed' }
-  finally { managerBusy.value = false }
+  confirmAsk(`Delete ${items.length} email${items.length > 1 ? 's' : ''}? This moves them to Trash.`, async () => {
+    managerBusy.value = true; managerError.value = ''; managerMsg.value = ''
+    try {
+      await wails.call('DeleteEmails', selectedAccount.value, items.map(it => ({ serverId: it.email.serverId, folderId: folderServerID(it.email.folderId) })))
+      managerMsg.value = `Deleted ${items.length} to Trash.`
+      await managerLoad()
+    } catch (err: any) { managerError.value = err?.message || 'Delete failed' }
+    finally { managerBusy.value = false }
+  })
 }
 
 async function managerCopyOrMove(op: 'copy' | 'move') {
@@ -995,14 +1015,14 @@ function selectedEmails(): Email[] {
 async function deleteEmails() {
   const items = selectedEmails()
   if (items.length === 0) { moveError.value = 'Select emails on the mail page first (Ctrl/Cmd-click).'; return }
-  const confirmed = confirm(`Delete ${items.length} email${items.length > 1 ? 's' : ''}? This moves them to Trash.`)
-  if (!confirmed) return
-  try {
-    await wails.call('DeleteEmails', selectedAccount.value, items.map(e => ({ serverId: e.serverId, folderId: folderServerID(e.folderId) })))
-    selectedEmailIds.value = []
-    folderMoveTarget.value = ''
-    await loadAllEmails()
-  } catch (err: any) { moveError.value = err?.message || 'Delete failed' }
+  confirmAsk(`Delete ${items.length} email${items.length > 1 ? 's' : ''}? This moves them to Trash.`, async () => {
+    try {
+      await wails.call('DeleteEmails', selectedAccount.value, items.map(e => ({ serverId: e.serverId, folderId: folderServerID(e.folderId) })))
+      selectedEmailIds.value = []
+      folderMoveTarget.value = ''
+      await loadAllEmails()
+    } catch (err: any) { moveError.value = err?.message || 'Delete failed' }
+  })
 }
 
 // Move: executed from Settings "Mail & Folders" for the emails selected on the
@@ -1048,14 +1068,15 @@ async function moveSingleEmail(dstServerId: string) {
 async function deleteSingleEmail() {
   const e = selectedEmail.value
   if (!e) return
-  if (!confirm('Delete this email? It moves to Trash.')) return
-  moveError.value = ''
-  try {
-    await wails.call('DeleteEmails', selectedAccount.value,
-      [{ serverId: e.serverId, folderId: folderServerID(e.folderId) }])
-    await loadAllEmails()
-    backToConversation()
-  } catch (err: any) { moveError.value = err?.message || 'Delete failed' }
+  confirmAsk('Delete this email? It moves to Trash.', async () => {
+    moveError.value = ''
+    try {
+      await wails.call('DeleteEmails', selectedAccount.value,
+        [{ serverId: e.serverId, folderId: folderServerID(e.folderId) }])
+      await loadAllEmails()
+      backToConversation()
+    } catch (err: any) { moveError.value = err?.message || 'Delete failed' }
+  })
 }
 
 // --- Inline actions from the conversation list ---
@@ -1075,13 +1096,14 @@ async function moveListEmail(e: Email, dst: HTMLSelectElement) {
 }
 
 async function deleteListEmail(e: Email) {
-  if (!confirm('Delete this email? It moves to Trash.')) return
-  moveError.value = ''
-  try {
-    await wails.call('DeleteEmails', selectedAccount.value,
-      [{ serverId: e.serverId, folderId: folderServerID(e.folderId) }])
-    await loadAllEmails()
-  } catch (err: any) { moveError.value = err?.message || 'Delete failed' }
+  confirmAsk('Delete this email? It moves to Trash.', async () => {
+    moveError.value = ''
+    try {
+      await wails.call('DeleteEmails', selectedAccount.value,
+        [{ serverId: e.serverId, folderId: folderServerID(e.folderId) }])
+      await loadAllEmails()
+    } catch (err: any) { moveError.value = err?.message || 'Delete failed' }
+  })
 }
 
 // Group actions: delete or move every currently-selected email at once.
@@ -1569,12 +1591,14 @@ async function addAccount() {
 }
 
 async function removeAccount() {
-  if (!selectedAccount.value || !confirm('Remove this account?')) return
-  try {
-    await wails.call('RemoveAccount', selectedAccount.value)
-    accounts.value = await wails.call('ListAccounts') || []
-    selectedAccount.value = accounts.value.length > 0 ? accounts.value[0].id : ''
-  } catch (e: any) { error.value = e.message }
+  if (!selectedAccount.value) return
+  confirmAsk('Remove this account?', async () => {
+    try {
+      await wails.call('RemoveAccount', selectedAccount.value)
+      accounts.value = await wails.call('ListAccounts') || []
+      selectedAccount.value = accounts.value.length > 0 ? accounts.value[0].id : ''
+    } catch (e: any) { error.value = e.message }
+  })
 }
 
 // OOF
@@ -1731,6 +1755,7 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
     <!-- ===== RIGHT: Conversation / Reading ===== -->
     <div class="right">
       <div v-if="error" class="error-banner" @click="error = ''">{{ error }}</div>
+      <div v-if="moveError" class="error-banner" @click="moveError = ''">{{ moveError }}</div>
 
       <!-- No person selected -->
       <div v-if="!selectedPerson" class="welcome">
@@ -2316,6 +2341,20 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
     </div>
   </div>
 
+  <!-- ===== IN-APP CONFIRMATION (native confirm() doesn't work in WebKitGTK) ===== -->
+  <div v-if="confirmBox" class="modal-overlay" @click.self.prevent>
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <h3>Please confirm</h3>
+      </div>
+      <div class="confirm-message" style="margin:16px 0;line-height:1.4">{{ confirmBox.message }}</div>
+      <div class="modal-actions" style="justify-content:flex-end">
+        <button class="action-btn muted" @click="confirmNo()">Cancel</button>
+        <button class="action-btn danger-btn" @click="confirmYes()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
 </template>
 
 <style>
@@ -2605,6 +2644,7 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
 .diary-selday .diary-list { gap: 8px; padding: 8px 16px 14px; }
 
 .danger-btn { background: #c0392b !important; }
+.confirm-message { font-size: 14px; color: var(--text); white-space: pre-line; }
 
 /* Settings → Mail & Folders → per-folder mail manager */
 .manager-panel {
