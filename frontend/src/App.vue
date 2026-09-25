@@ -817,11 +817,13 @@ async function syncAllLocked() {
     folders.value = await wails.call('GetFolders', selectedAccount.value) || []
 
     const mf = folders.value.filter(f => SYNCABLE_TYPES.includes(f.type))
-    // First sync (or nothing persisted): auto-check ALL syncable folders so
-    // the whole mailbox actually shows, not just Inbox+Sent. Later syncs
-    // honour what the user ticked (kept in localStorage).
+    // Default to Inbox + Sent for everyday conversations; the user can tick
+    // more in Settings → Mail & Folders (persisted in localStorage).
     if (syncedFolderIds.value.length === 0) {
-      syncedFolderIds.value = mf.map(f => f.id)
+      const inbox = mf.find(f => f.type === 2)
+      const sent = mf.find(f => f.type === 5)
+      if (inbox) syncedFolderIds.value.push(inbox.id)
+      if (sent) syncedFolderIds.value.push(sent.id)
       persistSyncedFolders()
     }
     // Show yesterday's mail immediately from the local cache, then sync every
