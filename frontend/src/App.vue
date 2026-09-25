@@ -1368,11 +1368,20 @@ function evDayKeys(ev: any): string[] {
   const s = new Date(ev.startTime)
   if (isNaN(s.getTime())) return []
   s.setHours(0, 0, 0, 0)
-  let e = ev.endTime ? new Date(ev.endTime) : null
-  if (e && !isNaN(e.getTime())) {
-    e.setHours(0, 0, 0, 0)
-    // endTime is exclusive → last covered day is the day BEFORE it.
-    e.setDate(e.getDate() - 1)
+  let e: Date
+  if (ev.endTime) {
+    const raw = new Date(ev.endTime)
+    if (!isNaN(raw.getTime())) {
+      // EAS/VCALENDAR endTime is exclusive: the last instant the event
+      // occupies is 1ms before it, and the last covered DAY is the day that
+      // instant falls in. So a timed event ending mid-day covers that final
+      // day (Sep 29 09:00 -> Sep 30 10:00 marks both 29th and 30th), while
+      // an all-day event ending at next midnight covers only its start day.
+      e = new Date(raw.getTime() - 1)
+      e.setHours(0, 0, 0, 0)
+    } else {
+      e = new Date(s)
+    }
   } else {
     e = new Date(s)
   }
