@@ -1337,6 +1337,34 @@ function evDayKey(ev: any): string {
   const d = new Date(ev.startTime); if (isNaN(d.getTime())) return ''
   return dmy(d)
 }
+// All the calendar-day keys an event occupies. A timed or all-day event that
+// runs from startTime across endTime (e.g. a 3-day stay) must mark EVERY day
+// it covers, not just its start day. endTime is exclusive in EAS/VCALENDAR,
+// so the last day is the day before endTime (unless endTime is missing or
+// earlier, in which case it's just the start day).
+function evDayKeys(ev: any): string[] {
+  const s = new Date(ev.startTime)
+  if (isNaN(s.getTime())) return []
+  s.setHours(0, 0, 0, 0)
+  let e = ev.endTime ? new Date(ev.endTime) : null
+  if (e && !isNaN(e.getTime())) {
+    e.setHours(0, 0, 0, 0)
+    // endTime is exclusive → last covered day is the day BEFORE it.
+    e.setDate(e.getDate() - 1)
+  } else {
+    e = new Date(s)
+  }
+  if (e < s) e = new Date(s)
+  const days: string[] = []
+  const cursor = new Date(s)
+  let guard = 0
+  while (cursor <= e && guard < 4000) {
+    days.push(dmy(cursor))
+    cursor.setDate(cursor.getDate() + 1)
+    guard++
+  }
+  return days
+}
 function isTodayDate(d: Date): boolean {
   const t = new Date()
   return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate()
@@ -1346,7 +1374,7 @@ function isTodayDate(d: Date): boolean {
 function evsOnDay(d: Date): any[] {
   const k = dkey(d)
   return calendarEvents.value
-    .filter(ev => evDayKey(ev) === k)
+    .filter(ev => evDayKeys(ev).includes(k))
     .slice().sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
 }
 
@@ -1373,7 +1401,7 @@ const diaryCalendar = computed<{ day: number; inMonth: boolean; isToday: boolean
   const prevDays = new Date(m.getFullYear(), m.getMonth(), 0).getDate()
   const byDate: Record<string, any[]> = {}
   for (const ev of calendarEvents.value) {
-    const k = evDayKey(ev); if (k) (byDate[k] ||= []).push(ev)
+    for (const k of evDayKeys(ev)) (byDate[k] ||= []).push(ev)
   }
   const cells: { day: number; inMonth: boolean; isToday: boolean; has: boolean; evs: any[]; key: string }[] = []
   for (let i = 0; i < startWeekday; i++) {
