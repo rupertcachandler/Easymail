@@ -103,7 +103,11 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
-          APP=build/bin/EasyMail.app
+          # wails.json sets outputfilename: easymail, so the macOS bundle is
+          # build/bin/easymail.app (lowercase), NOT EasyMail.app. Using the
+          # wrong case made cp fail and every release ship deb-only.
+          APP=build/bin/easymail.app
+          echo "bundles: $(ls build/bin/*.app)"
           # Ensure the bundle carries the release identity
           STAGE=/tmp/boi-dmg
           rm -rf "$STAGE"
