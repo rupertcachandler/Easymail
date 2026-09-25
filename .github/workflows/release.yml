@@ -72,7 +72,7 @@ jobs:
           generate_release_notes: true
 
   macos-dmg:
-    runs-on: macos-13  # x86_64 runner (matches the Intel target Mac)
+    runs-on: macos-14  # x86_64 runner (matches the Intel target Mac); macos-13 was retired by GitHub
     # Runs after the linux job so the release already exists; softprops then
     # adds just the .dmg asset (avoids a race creating the same release).
     needs: linux-deb
