@@ -94,11 +94,11 @@ const syncedFolderIds = ref<string[]>([])
 // signatures). Without this the list is empty again on every boot and the
 // mail view shows "No emails yet" until the user re-ticks folders.
 function persistSyncedFolders() {
-  localStorage.setItem('boi-synced-folders-' + selectedAccount.value, JSON.stringify(syncedFolderIds.value))
+  localStorage.setItem('boi-synced-folders-v2-' + selectedAccount.value, JSON.stringify(syncedFolderIds.value))
 }
 function restoreSyncedFolders() {
   try {
-    const v = JSON.parse(localStorage.getItem('boi-synced-folders-' + selectedAccount.value) || '[]')
+    const v = JSON.parse(localStorage.getItem('boi-synced-folders-v2-' + selectedAccount.value) || '[]')
     if (Array.isArray(v)) syncedFolderIds.value = v.filter(x => typeof x === 'string')
   } catch { syncedFolderIds.value = [] }
 }
