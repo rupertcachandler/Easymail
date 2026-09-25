@@ -798,7 +798,22 @@ async function reloadFolderEmails(folder: any) {
 }
 async function syncAllLocked() {
   try {
-    await wails.call('SyncFolders', selectedAccount.value)
+    // Startup race: Go connects accounts in a background goroutine. The very
+    // first SyncFolders can hit 'account not connected' and abort the whole
+    // sync (→ empty mailbox). Retry briefly — the connect goroutine usually
+    // finishes within a couple of seconds.
+    let syncErr: any = null
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        await wails.call('SyncFolders', selectedAccount.value)
+        syncErr = null
+        break
+      } catch (e) {
+        syncErr = e
+        if (attempt < 5) await new Promise(r => setTimeout(r, 1200 * attempt))
+      }
+    }
+    if (syncErr) throw syncErr
     folders.value = await wails.call('GetFolders', selectedAccount.value) || []
 
     const mf = folders.value.filter(f => SYNCABLE_TYPES.includes(f.type))
@@ -1539,11 +1554,14 @@ const oofMessage = ref('')
 
 const appVersion = ref('…')
 onMounted(async () => {
+  // Register event handlers BEFORE the first sync: loadAccounts (called below)
+  // triggers a SyncFolders that can race the Go connect goroutine; the
+  // account-connected retry must not fire into an unregistered handler.
+  wails.on('account-connected', (id: string) => { if (id === selectedAccount.value) syncAll() })
   loadAccounts()
   loadSignatures(); migrateLegacySignature()
   restoreSyncedFolders()
   try { appVersion.value = String(await wails.call('GetVersion')) } catch { appVersion.value = '' }
-  wails.on('account-connected', (id: string) => { if (id === selectedAccount.value) syncAll() })
   // Background poll (Go startMailPolling) emits this only when a folder
   // actually changed (added/deleted mail). Reload just that folder and merge
   // it into the cache — the old handler called loadAllEmails() (all folders,

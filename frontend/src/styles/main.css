@@ -621,13 +621,24 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .settings-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 /* Settings redesign: wider modal + two-column panes */
-.modal.settings { width: 96%; max-width: 1200px; }
-.settings-pane { overflow-y: auto; padding: 10px 22px 18px 22px; }
+.modal.settings {
+  width: 96%; max-width: 1200px; max-height: 88vh;
+  overscroll-behavior: contain;
+}
+.settings-pane {
+  overflow-y: auto; padding: 10px 22px 18px 22px;
+  overscroll-behavior: contain;
+}
 .settings-cols { display: flex; gap: 32px; align-items: flex-start; }
 .settings-col { flex: 1; min-width: 0; }
 .settings-cols .form-group { padding: 0 12px; }
 .settings-cols .modal-actions { padding: 12px 12px; }
-.settings-pane { overflow-y: auto; padding: 10px 22px 18px 22px; }
+/* Sync folder tree: scrolls internally so long trees stay reachable and the
+   wheel never chains through to the mail list behind the modal. */
+.settings-pane .folder-panel-sync {
+  max-height: 340px; overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .acc-list { margin-bottom: 14px; }
 .acc-item {
   display: flex; align-items: center; gap: 8px; padding: 8px 4px;
