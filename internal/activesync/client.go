@@ -862,7 +862,13 @@ func (c *Client) MoveEmails(ctx context.Context, moves []EmailMove) error {
 		return fmt.Errorf("move items: %w", err)
 	}
 	for _, r := range resp.Responses {
-		if r.Status != int32(eas.StatusSuccess) && r.Status != 0 {
+		// SOGo returns Status 3 to mean SUCCESS for MoveItems, not
+		// SyncStatusInvalidSyncKey. Its processMoveItems handler emits exactly
+		// three Status values: 1 (source collection missing / no-op), 2
+		// (destination missing), 3 (success). Treating 3 as a failure made
+		// every move-to-Trash (delete) report "EAS status 3" and skip the
+		// local cache delete even though the mail moved server-side.
+		if r.Status != int32(eas.StatusSuccess) && r.Status != 0 && r.Status != 3 {
 			return fmt.Errorf("move item %s failed with EAS status %d", r.SrcMsgID, r.Status)
 		}
 	}
