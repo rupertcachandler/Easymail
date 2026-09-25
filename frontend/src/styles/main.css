@@ -97,6 +97,14 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .account-sel:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+/* Per-account colour dots shown next to the account selector: one dot per
+   account, deterministic colour derived from the mailbox address, so every
+   BOI copy shows the same colour for the same mailbox without server storage. */
+.account-dot-wrap { display: inline-flex; gap: 3px; align-items: center; margin-left: 6px; }
+.account-dot {
+  width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+  border: 1px solid rgba(0,0,0,0.25);
+}
 /* Uniform icon-button baseline: every icon button is a 32px square with the
    glyph optically centred, so the whole UI shares one consistent size. */
 .icon-btn {
@@ -230,6 +238,14 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 }
 .folder-icon { font-size: 16px; }
 .folder-name { flex: 1; color: var(--text); font-weight: 450; }
+.folder-twisty {
+  background: transparent; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 10px; padding: 0; width: 16px; height: 16px;
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+}
+.folder-twisty-spacer { visibility: hidden; }
+/* descendant rows: indent under their parent (depth handled inline via paddingLeft) */
+.folder-check.folder-indent { }
 .folder-unread {
   background: var(--gradient-accent); color: #fff; font-size: 10px;
   padding: 2px 8px; border-radius: 10px; font-weight: 700;

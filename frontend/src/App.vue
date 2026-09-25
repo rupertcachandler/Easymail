@@ -56,7 +56,17 @@ const wails = {
 
 // === Types ===
 interface Account { id: string; name: string; email: string; connected: boolean }
-interface Folder { id: string; accountId: string; serverId: string; name: string; type: number; unreadCount: number; isHidden: boolean }
+// ACCOUNT_COLOURS: deterministic per-email palette (hash email -> colour) so the
+// same mailbox shows the same colour in every BOI copy, no server storage needed.
+const ACCOUNT_COLOURS = ['#e6194b','#3b75c3','#f5a623','#66cc00','#ac5ac2','#ff7f0e','#00bcd4','#d62728','#2ca02c','#9467bd','#17becf','#ffbb78']
+const accountColour = (email: string): string => {
+  const e = (email || '').trim().toLowerCase()
+  let h = 0
+  for (let i = 0; i < e.length; i++) h = (h * 31 + e.charCodeAt(i)) % 9973
+  return ACCOUNT_COLOURS[h % ACCOUNT_COLOURS.length]
+}
+const accountEmail = (accountId: string): string => accounts.value.find(a => a.id === accountId)?.email || ''
+interface Folder { id: string; accountId: string; serverId: string; parentId: string; name: string; type: number; unreadCount: number; isHidden: boolean }
 interface EmailAttachment { displayName: string; fileReference: string; contentId: string; isInline: boolean; method: number; estimatedDataSize: number }
 interface Email { id: string; accountId: string; folderId: string; serverId: string; from: string; fromEmail: string; to: string; toEmails: string[]; subject: string; dateReceived: any; isRead: boolean; isFlagged: boolean; importance: number; hasAttachment: boolean; attachments?: EmailAttachment[]; preview: string; body: string; bodyType: string }
 interface Contact { id: string; accountId: string; name: string; email: string; emailCount: number; isFavorite: boolean }
@@ -597,6 +607,46 @@ const personEmails = computed(() => {
 })
 
 const mailFolders = computed(() => folders.value.filter(f => !f.isHidden && SYNCABLE_TYPES.includes(f.type)))
+
+// === Folder tree ===
+// parentId drives a nested tree so subfolders render indented under their
+// parent (the data was always in the DB, this is purely display).
+const folderChildren = (parentId: string): Folder[] => {
+  return mailFolders.value.filter(f => (f.parentId || '') === parentId)
+}
+const folderRoots = computed(() => mailFolders.value.filter(f => !f.parentId || !mailFolders.value.some(p => p.id === f.parentId)))
+// Flat indented list used by the flat pickers (folder manager / move target).
+const indentedFolders = computed(() => {
+  const out: { f: Folder; depth: number }[] = []
+  const walk = (parentId: string, depth: number) => {
+    for (const f of folderChildren(parentId)) {
+      out.push({ f, depth })
+      walk(f.id, depth + 1)
+    }
+  }
+  for (const f of folderRoots.value) { out.push({ f, depth: 0 }); walk(f.id, 1) }
+  return out
+})
+const folderIcon = (f: Folder): string => f.type === 2 ? '📥' : f.type === 5 ? '📤' : f.type === 3 ? '📝' : f.type === 4 ? '🗑' : '📁'
+const folderCollapsed = ref<Set<string>>(new Set())
+const folderHasChildren = (f: Folder): boolean => folderChildren(f.id).length > 0
+const toggleFolder = (f: Folder) => {
+  const s = new Set(folderCollapsed.value)
+  if (s.has(f.id)) s.delete(f.id); else s.add(f.id)
+  folderCollapsed.value = s
+}
+// Flattened tree for the sync list, honouring collapsed state at any depth.
+const visibleFolderTree = computed(() => {
+  const out: { f: Folder; depth: number }[] = []
+  const walk = (parentId: string, depth: number) => {
+    for (const f of folderChildren(parentId)) {
+      out.push({ f, depth })
+      if (!folderCollapsed.value.has(f.id)) walk(f.id, depth + 1)
+    }
+  }
+  for (const f of folderRoots.value) walk(f.id, 0)
+  return out
+})
 
 // === Avatar ===
 const avatarUrl = (email: string, size = 64) => {
@@ -1536,6 +1586,7 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
           <select v-model="selectedAccount" class="account-sel">
             <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.email }}</option>
           </select>
+          <span class="account-dot-wrap"><span v-for="a in accounts" :key="a.id" class="account-dot" :style="{ background: accountColour(a.email) }"></span></span>
           <button class="icon-btn" @click="syncAll" :disabled="syncing" :title="syncing ? 'Syncing...' : 'Sync'"><span :class="{ spin: syncing }">🔄</span></button>
         </div>
       </div>
@@ -1646,7 +1697,7 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
             <div class="bubble-avatar-col" v-if="!isFromMe(e)">
               <img :src="avatarUrl(e.fromEmail || e.from, 32)" class="avatar-xs" />
             </div>
-            <div class="bubble-content">
+            <div class="bubble-content" :style="isFromMe(e) ? '' : 'border-left-color:' + accountColour(accountEmail(e.accountId))">
               <div class="bubble-top-row">
                 <span class="bubble-from">{{ isFromMe(e) ? 'You' : e.from }}</span>
                 <span class="bubble-folder" v-if="isFromMe(e)">{{ folders.find(f => f.id === e.folderId)?.name }}</span>
@@ -2072,7 +2123,7 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
         <div class="mailman-row">
           <select v-model="newFolderParentId" class="folder-sel" style="width:38%">
             <option value="">Mailbox root</option>
-            <option v-for="f in mailFolders" :key="f.id" :value="f.id">{{ f.name }}</option>
+            <option v-for="item in indentedFolders" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ item.f.name }}</option>
           </select>
           <input v-model="newFolderName" class="folder-sel" style="flex:1" placeholder="e.g. Invoices" @keyup.enter="createFolder" />
           <button class="primary-btn" @click="createFolder" :disabled="folderBusy">{{ folderBusy ? 'Creating…' : 'Create' }}</button>
@@ -2082,7 +2133,7 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
         <p class="muted" style="font-size:12px;margin-bottom:8px">Open any folder and copy, move or delete its mail — one at a time or many at once.</p>
         <div class="mailman-row">
           <select v-model="managerFolderId" class="folder-sel" style="flex:1" @change="managerLoad()">
-            <option v-for="f in mailFolders" :key="f.id" :value="f.id">{{ f.type === 2 ? '📥 ' : f.type === 5 ? '📤 ' : f.type === 3 ? '📝 ' : f.type === 4 ? '🗑 ' : '📁 ' }}{{ f.name }}</option>
+            <option v-for="item in indentedFolders" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ folderIcon(item.f) }} {{ item.f.name }}</option>
           </select>
           <button class="action-btn" @click="managerLoad()" :disabled="managerLoading">{{ managerLoading ? 'Loading…' : '↻ Refresh' }}</button>
         </div>
@@ -2097,7 +2148,7 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
             </button>
             <select v-model="managerDstFolderId" class="folder-sel" style="flex:1" title="Destination folder (for copy/move)">
               <option value="">Destination folder…</option>
-              <option v-for="f in mailFolders.filter(f => f.id !== managerFolderId)" :key="f.id" :value="f.id">{{ f.name }}</option>
+              <option v-for="item in indentedFolders.filter(i => i.f.id !== managerFolderId)" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ item.f.name }}</option>
             </select>
             <button class="action-btn" @click="managerCopyOrMove('copy')" :disabled="managerBusy" title="Copy selected mail to the destination">⧉ Copy</button>
             <button class="action-btn" @click="managerCopyOrMove('move')" :disabled="managerBusy" title="Move selected mail to the destination">➤ Move</button>
@@ -2123,19 +2174,23 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
           <button :class="['pill', { active: !selectedFolder }]" @click="clearFolder()">All Mail</button>
           <select v-model="selectedFolder" class="folder-sel" @change="selectedPerson = null; selectedEmail = null">
             <option value="">All synced</option>
-            <option v-for="f in mailFolders.filter(f => syncedFolderIds.includes(f.id))" :key="f.id" :value="f.id">{{ f.name }}</option>
+            <option v-for="item in indentedFolders.filter(i => syncedFolderIds.includes(i.f.id))" :key="item.f.id" :value="item.f.id">{{ '　'.repeat(item.depth) }}{{ item.f.name }}</option>
           </select>
         </div>
 
         <div class="folder-panel-title" style="margin-bottom:6px">Sync folders</div>
         <p class="muted" style="font-size:12px;margin-bottom:10px">Choose which mail folders BOI keeps in sync. Mail in unselected folders stays on the server and won't appear in BOI.</p>
         <div class="folder-panel" style="border:none;background:transparent;padding:0;max-height:none;overflow:visible">
-          <label v-for="f in mailFolders" :key="f.id" class="folder-check">
-            <input type="checkbox" :checked="syncedFolderIds.includes(f.id)" @change="toggleFolderSync(f.id)" />
-            <span class="folder-icon">{{ f.type === 2 ? '📥' : f.type === 5 ? '📤' : f.type === 3 ? '📝' : f.type === 4 ? '🗑' : '📁' }}</span>
-            <span class="folder-name">{{ f.name }}</span>
-            <span v-if="f.unreadCount" class="folder-unread">{{ f.unreadCount }}</span>
-          </label>
+          <template v-for="item in visibleFolderTree" :key="item.f.id">
+            <label :class="['folder-check', { 'folder-indent': item.depth > 0 }]" :style="{ paddingLeft: (8 + item.depth * 16) + 'px' }">
+              <button v-if="folderHasChildren(item.f)" class="folder-twisty" @click.prevent="toggleFolder(item.f)">{{ folderCollapsed.has(item.f.id) ? '▸' : '▾' }}</button>
+              <span v-else class="folder-twisty folder-twisty-spacer">·</span>
+              <input type="checkbox" :checked="syncedFolderIds.includes(item.f.id)" @change="toggleFolderSync(item.f.id)" />
+              <span class="folder-icon">{{ folderIcon(item.f) }}</span>
+              <span class="folder-name">{{ item.f.name }}</span>
+              <span v-if="item.f.unreadCount" class="folder-unread">{{ item.f.unreadCount }}</span>
+            </label>
+          </template>
         </div>
         <div class="modal-actions" style="justify-content:flex-end">
           <button class="primary-btn" @click="syncAll">Sync now</button>
