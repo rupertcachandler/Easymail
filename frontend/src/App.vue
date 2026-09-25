@@ -90,6 +90,18 @@ const error = ref('')
 
 const SYNCABLE_TYPES = [2, 3, 4, 5, 12] // Inbox, Drafts, Trash, Sent, Custom/Junk
 const syncedFolderIds = ref<string[]>([])
+// Persist the user's folder-sync selection so it survives restarts (mirrors
+// signatures). Without this the list is empty again on every boot and the
+// mail view shows "No emails yet" until the user re-ticks folders.
+function persistSyncedFolders() {
+  localStorage.setItem('boi-synced-folders-' + selectedAccount.value, JSON.stringify(syncedFolderIds.value))
+}
+function restoreSyncedFolders() {
+  try {
+    const v = JSON.parse(localStorage.getItem('boi-synced-folders-' + selectedAccount.value) || '[]')
+    if (Array.isArray(v)) syncedFolderIds.value = v.filter(x => typeof x === 'string')
+  } catch { syncedFolderIds.value = [] }
+}
 const showFolderPanel = ref(false)
 
 // Views: Contacts + Diary (calendar)
@@ -651,7 +663,10 @@ const visibleFolderTree = computed(() => {
       if (!folderCollapsed.value.has(f.id)) walk(f.serverId, depth + 1)
     }
   }
-  for (const f of folderRoots.value) walk(f.serverId, 0)
+  for (const f of folderRoots.value) {
+    out.push({ f, depth: 0 })
+    if (!folderCollapsed.value.has(f.id)) walk(f.serverId, 1)
+  }
   return out
 })
 
@@ -787,12 +802,12 @@ async function syncAllLocked() {
     folders.value = await wails.call('GetFolders', selectedAccount.value) || []
 
     const mf = folders.value.filter(f => SYNCABLE_TYPES.includes(f.type))
-    // Auto-check Inbox + Sent on first sync (Unibox needs both)
+    // First sync (or nothing persisted): auto-check ALL syncable folders so
+    // the whole mailbox actually shows, not just Inbox+Sent. Later syncs
+    // honour what the user ticked (kept in localStorage).
     if (syncedFolderIds.value.length === 0) {
-      const inbox = mf.find(f => f.type === 2)
-      const sent = mf.find(f => f.type === 5)
-      if (inbox) syncedFolderIds.value.push(inbox.id)
-      if (sent) syncedFolderIds.value.push(sent.id)
+      syncedFolderIds.value = mf.map(f => f.id)
+      persistSyncedFolders()
     }
     // Show yesterday's mail immediately from the local cache, then sync every
     // folder in the background, then refresh once at the end so the list
@@ -1090,7 +1105,8 @@ function toggleFolderSync(fid: string) {
   const idx = syncedFolderIds.value.indexOf(fid)
   if (idx >= 0) syncedFolderIds.value.splice(idx, 1)
   else syncedFolderIds.value.push(fid)
-  syncAll()
+  persistSyncedFolders()
+  loadAllEmails()
 }
 
 // ---- Signatures (named store + per-account default) ----
@@ -1525,6 +1541,7 @@ const appVersion = ref('…')
 onMounted(async () => {
   loadAccounts()
   loadSignatures(); migrateLegacySignature()
+  restoreSyncedFolders()
   try { appVersion.value = String(await wails.call('GetVersion')) } catch { appVersion.value = '' }
   wails.on('account-connected', (id: string) => { if (id === selectedAccount.value) syncAll() })
   // Background poll (Go startMailPolling) emits this only when a folder
@@ -2138,7 +2155,7 @@ watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value 
           <div class="settings-col">
             <div class="folder-panel-title" style="margin-bottom:6px">Sync folders</div>
             <p class="muted" style="font-size:12px;margin-bottom:10px">Choose which mail folders BOI keeps in sync. Mail in unselected folders stays on the server and won't appear in BOI.</p>
-            <div class="folder-panel" style="border:none;background:transparent;padding:0;max-height:none;overflow:visible">
+            <div class="folder-panel-sync" style="border:none;background:transparent;padding:0">
               <template v-for="item in visibleFolderTree" :key="item.f.id">
                 <label :class="['folder-check', { 'folder-indent': item.depth > 0 }]" :style="{ paddingLeft: (8 + item.depth * 16) + 'px' }">
                   <button v-if="folderHasChildren(item.f)" class="folder-twisty" @click.prevent="toggleFolder(item.f)">{{ folderCollapsed.has(item.f.id) ? '▸' : '▾' }}</button>

@@ -867,6 +867,21 @@ func (a *App) CreateMailFolder(accountID, displayName, parentServerId string) (s
 		log.Printf("CreateMailFolder: failed: %v", err)
 		return "", err
 	}
+	// Persist the new folder locally right away (same scheme as SyncFolders)
+	// so GetFolders returns it immediately instead of waiting for a full
+	// folder sync. Without this the sidebar/tree shows nothing new until the
+	// next SyncFolders reconciles it in.
+	f := &models.Folder{
+		ID:        fmt.Sprintf("%s-%s", accountID, serverID),
+		AccountID: accountID,
+		ServerID:  serverID,
+		ParentID:  parentServerId,
+		Name:      displayName,
+		Type:      12, // custom user folder
+	}
+	if err := a.store.SaveFolder(f); err != nil {
+		log.Printf("CreateMailFolder: local save failed (folder will appear on next sync): %v", err)
+	}
 	runtime.EventsEmit(a.ctx, "folders-updated", accountID)
 	log.Printf("CreateMailFolder: created %q under %q serverId=%s", displayName, parentServerId, serverID)
 	return serverID, nil
