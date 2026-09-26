@@ -1663,7 +1663,15 @@ onMounted(async () => {
 // entry point (see below); syncQueued lives here so both syncAll and the
 // account-connected handler share it.
 let syncQueued = false
-watch(selectedAccount, () => { selectedPerson.value = null; selectedEmail.value = null; allEmails.value = []; if (selectedAccount.value) syncAll() })
+watch(selectedAccount, () => {
+  selectedPerson.value = null; selectedEmail.value = null; allEmails.value = [];
+  // syncedFolderIds is per-account (persisted under boi-synced-folders-v2-<acct>),
+  // but lives in ONE global array. Without restoring on switch, account 2 inherits
+  // account 1's folder IDs (folder ids are account-scoped), so its folders are never
+  // in toSync → no mail shown, and the non-empty array skips the Inbox+Sent default.
+  restoreSyncedFolders()
+  if (selectedAccount.value) syncAll()
+})
 </script>
 
 <template>
