@@ -667,11 +667,20 @@ func (c *Client) CreateCalendarEvent(ctx context.Context, collectionID string, e
 		return "", fmt.Errorf("create calendar event: %w", err)
 	}
 	for _, col := range resp.Collections.Collection {
-		if col.Status != 0 && col.Status != 1 {
+		// SOGo processes the Add command even when it returns collection
+		// status 3 ("do a complete resync" — the server dropped its sync
+		// state and wants the client to restart from SyncKey 0). Status 3 is
+		// NOT a command failure here: the new event is created and a
+		// ServerId comes back in Responses.Add. Only statuses 2/12/13 (and
+		// anything else unexpected) genuinely mean the Add didn't apply.
+		if col.Status != 0 && col.Status != 1 && col.Status != 3 {
 			return "", fmt.Errorf("calendar create status %d", col.Status)
 		}
 		if col.SyncKey != "" {
 			c.syncKeys[collectionID] = col.SyncKey
+			if c.saveSyncKey != nil {
+				c.saveSyncKey(collectionID, col.SyncKey)
+			}
 		}
 		if col.Responses != nil && len(col.Responses.Add) > 0 {
 			if sid := col.Responses.Add[0].ServerID; sid != "" {
@@ -736,11 +745,17 @@ func (c *Client) UpdateCalendarEvent(ctx context.Context, collectionID, serverID
 		return "", fmt.Errorf("update calendar event: %w", err)
 	}
 	for _, col := range resp.Collections.Collection {
-		if col.Status != 0 && col.Status != 1 {
+		// Same tolerance as create: SOGo applies the Change even under
+		// collection status 3 (resync). Only genuinely-unexpected statuses
+		// fail. We still return the command's ServerId when present.
+		if col.Status != 0 && col.Status != 1 && col.Status != 3 {
 			return "", fmt.Errorf("calendar update status %d", col.Status)
 		}
 		if col.SyncKey != "" {
 			c.syncKeys[collectionID] = col.SyncKey
+			if c.saveSyncKey != nil {
+				c.saveSyncKey(collectionID, col.SyncKey)
+			}
 		}
 		if col.Responses != nil && len(col.Responses.Change) > 0 {
 			if sid := col.Responses.Change[0].ServerID; sid != "" {
@@ -828,11 +843,16 @@ func (c *Client) DeleteCalendarEvent(ctx context.Context, collectionID, serverID
 		return fmt.Errorf("delete calendar event: %w", err)
 	}
 	for _, col := range resp.Collections.Collection {
-		if col.Status != 0 && col.Status != 1 {
+		// SOGo still processes the Delete under collection status 3 (resync);
+		// only unexpected statuses fail the delete.
+		if col.Status != 0 && col.Status != 1 && col.Status != 3 {
 			return fmt.Errorf("calendar delete status %d", col.Status)
 		}
 		if col.SyncKey != "" {
 			c.syncKeys[collectionID] = col.SyncKey
+			if c.saveSyncKey != nil {
+				c.saveSyncKey(collectionID, col.SyncKey)
+			}
 		}
 	}
 	return nil
