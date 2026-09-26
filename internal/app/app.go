@@ -236,7 +236,15 @@ func (a *App) UpdateAccount(id, name, email, password, serverURL string) (*model
 	}
 	acc.Name = name
 	acc.Email = email
-	acc.Password = password
+	// The settings form can't read back stored passwords, so it sends ""
+	// when the user leaves the field untouched. An unconditional overwrite
+	// would blank the stored password on any unrelated account edit (name,
+	// server) and silently kill the account's connection. Empty = keep.
+	if password != "" {
+		acc.Password = password
+	} else {
+		log.Printf("UpdateAccount: kept existing password for %s (field empty)", id)
+	}
 	if serverURL != "" {
 		acc.ServerURL = serverURL
 	}
