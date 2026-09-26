@@ -44,7 +44,12 @@ func main() {
 			Icon:                appIcon,
 			WindowIsTranslucent: false,
 			WebviewGpuPolicy:   linux.WebviewGpuPolicyAlways,
-			ProgramName:         "easymail",
+			// Window identity must match StartupWMClass in packaging/boi.desktop,
+			// otherwise GNOME (especially on Wayland, where gtk_window_set_icon
+			// is discarded) shows a generic icon for the running window instead
+			// of the BOI bolt, and the launcher never shows a running indicator.
+			// "boi" = desktop file = installed binary name. Consistent trio.
+			ProgramName:         "boi",
 		},
 	})
 
