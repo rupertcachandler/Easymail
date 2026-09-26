@@ -65,6 +65,23 @@ const accountColour = (email: string): string => {
   for (let i = 0; i < e.length; i++) h = (h * 31 + e.charCodeAt(i)) % 9973
   return ACCOUNT_COLOURS[h % ACCOUNT_COLOURS.length]
 }
+const ACCOUNT_TINT_RGB = [
+  // soft, muted washes — user 1 green, user 2 blue, user 3 purple, then picks
+  // from the rest in account order. Deliberately desaturated: a gentle window
+  // tint, not a paint bucket.
+  [84, 178, 130],   // green
+  [96, 148, 233],   // blue
+  [158, 120, 214],  // purple
+  [222, 170, 90],   // amber
+  [72, 188, 178],   // teal
+  [224, 130, 150],  // rose
+]
+// Soft radial/linear wash for the whole window, following the selected account.
+const accountTint = computed(() => {
+  const i = accounts.value.findIndex((a: { id: string }) => a.id === selectedAccount.value)
+  const [r, g, b] = ACCOUNT_TINT_RGB[Math.max(0, i) % ACCOUNT_TINT_RGB.length]
+  return `linear-gradient(160deg, rgba(${r},${g},${b},0.18) 0%, rgba(${r},${g},${b},0.07) 55%, rgba(${r},${g},${b},0.03) 100%)`
+})
 const accountEmail = (accountId: string): string => accounts.value.find(a => a.id === accountId)?.email || ''
 interface Folder { id: string; accountId: string; serverId: string; parentId: string; name: string; type: number; unreadCount: number; isHidden: boolean }
 interface EmailAttachment { displayName: string; fileReference: string; contentId: string; isInline: boolean; method: number; estimatedDataSize: number }
@@ -1691,6 +1708,9 @@ watch(selectedAccount, () => {
 
   <!-- ===== MAIN APP: UNIBOX PEOPLE-CENTRIC ===== -->
   <div class="app" v-else>
+    <!-- Soft per-account window tint (user 1 green, user 2 blue, user 3 purple, …).
+         Purely decorative: pointer-events none so it never blocks clicks. -->
+    <div class="account-tint" :style="{ background: accountTint }" :key="selectedAccount"></div>
     <!-- ===== LEFT: People list ===== -->
     <div class="left">
       <div class="left-toolbar">
@@ -2376,6 +2396,22 @@ watch(selectedAccount, () => {
 
 <style>
 @import './styles/main.css';
+
+/* Per-account window tint: soft full-window colour wash that follows the
+   selected account (user 1 green, user 2 blue, user 3 purple, …).
+   Purely decorative — never intercepts clicks or focus. */
+.account-tint {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+  animation: tint-settle 0.5s ease-out both;
+}
+@keyframes tint-settle {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 /* Clickable Frau Blücher logo → Easter-egg video */
 .logo-link { display: inline-flex; align-items: center; cursor: pointer; text-decoration: none; line-height: 0; }
