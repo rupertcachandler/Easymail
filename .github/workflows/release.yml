@@ -49,8 +49,10 @@ jobs:
           STAGE=/tmp/boi-deb
           rm -rf "$STAGE"
           mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/bin" "$STAGE/usr/share/applications" "$STAGE/usr/share/icons/hicolor/scalable/apps"
-          strip build/bin/easymail
-          cp build/bin/easymail "$STAGE/usr/bin/boi"
+          BIN=$(ls build/bin/* | head -1)
+          echo "binary: $BIN"
+          strip "$BIN"
+          cp "$BIN" "$STAGE/usr/bin/boi"
           # Ship the launcher entry + icon + postinst too — without these a fresh
           # install has /usr/bin/boi but NO app-grid icon (observed on 0.4.80).
           cp packaging/boi.desktop "$STAGE/usr/share/applications/boi.desktop"
