@@ -108,10 +108,11 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
-          # wails.json sets outputfilename: easymail, so the macOS bundle is
-          # build/bin/easymail.app (lowercase), NOT EasyMail.app. Using the
-          # wrong case made cp fail and every release ship deb-only.
-          APP=build/bin/easymail.app
+          # wails.json outputfilename is now "boi" (productName BOI), so the
+          # macOS bundle is build/bin/boi.app. Glob instead of hardcoding the
+          # case so renames don't silently break the dmg again.
+          APP=$(ls -d build/bin/*.app | head -1)
+          echo "bundle: $APP"
           echo "bundles: $(ls build/bin/*.app)"
           # Ensure the bundle carries the release identity
           STAGE=/tmp/boi-dmg

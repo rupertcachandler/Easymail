@@ -1,18 +1,19 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "EasyMail",
-  "outputfilename": "easymail",
+  "name": "BOI",
+  "outputfilename": "boi",
   "frontend:install": "npm install",
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
+  "icon": ["build/appicon.png"],
   "author": {
     "name": "Frau Blücher"
   },
   "info": {
     "companyName": "BOI",
     "productName": "BOI",
-    "productVersion": "0.4.77",
+    "productVersion": "0.4.80",
     "copyright": "© Rupert Chandler",
     "comments": "People-centric email client (BOI)"
   }
