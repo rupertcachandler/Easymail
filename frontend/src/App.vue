@@ -1262,6 +1262,24 @@ function openReply() {
   openCompose(selectedEmail.value.fromEmail, 'Re: ' + selectedEmail.value.subject, '', selectedEmail.value.cc || '')
 }
 
+function openReplyAll() {
+  if (!selectedEmail.value) return
+  const e = selectedEmail.value
+  const me = accountEmail(e.accountId).toLowerCase()
+  const seen = new Set<string>()
+  const add = (addr: string) => {
+    const a = (addr || '').trim().toLowerCase()
+    if (a && a !== me && !seen.has(a)) seen.add(a)
+  }
+  // Sender + all To/CC recipients, excluding me.
+  add(e.fromEmail || e.from)
+  for (const t of (e.toEmails || [])) add(t)
+  for (const c of (e.cc || '').split(',')) add(c.replace(/<.*>/, '').trim())
+  const to = [...seen].join(', ')
+  if (!to) { openReply(); return }
+  openCompose(to, 'Re: ' + e.subject, '', '')
+}
+
 function openForward() {
   if (!selectedEmail.value) return
   openCompose('', 'Fwd: ' + selectedEmail.value.subject)
@@ -1872,6 +1890,7 @@ watch(selectedAccount, () => {
           <span class="reading-date">{{ formatDate(selectedEmail.dateReceived) }} {{ formatTime(selectedEmail.dateReceived) }}</span>
           <div class="reading-actions">
             <button class="action-btn" @click="openReply">↩ Reply</button>
+            <button class="action-btn" @click="openReplyAll" title="Reply to sender and all recipients">↩↩ Reply All</button>
             <button class="action-btn muted" @click="openForward">↗ Forward</button>
             <button class="action-btn muted" @click="printEmail" title="Print this email">🖨 Print</button>
             <button class="action-btn muted" v-if="selectedEmail.body && (selectedEmail.bodyType === 'html' || selectedEmail.body.includes('<'))"
