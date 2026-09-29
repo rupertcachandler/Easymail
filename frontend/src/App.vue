@@ -1751,18 +1751,21 @@ onMounted(async () => {
 // entry point (see below); syncQueued lives here so both syncAll and the
 // account-connected handler share it.
 let syncQueued = false
-watch(selectedAccount, () => {
+watch(selectedAccount, async () => {
   selectedPerson.value = null; selectedEmail.value = null; allEmails.value = [];
   // syncedFolderIds is per-account (persisted under boi-synced-folders-v2-<acct>),
   // but lives in ONE global array. Without restoring on switch, account 2 inherits
   // account 1's folder IDs (folder ids are account-scoped), so its folders are never
   // in toSync → no mail shown, and the non-empty array skips the Inbox+Sent default.
   restoreSyncedFolders()
-  loadCachedAccountMail()
-  // Fire the background sync but DO NOT block on it. It must not run before the
-  // cache load fills the list (see loadCachedAccountMail), and the app must stay
-  // responsive for reading while the sync tops up in the background.
-  syncAll()
+  // Fill the list from the local cache FIRST and WAIT for it, so the selected
+  // account's mail is on screen with zero waiting. Only after that do we fire
+  // the background sync to top up — never before, or the sync's network phase
+  // masks the cache and the user waits for a resync to see anything.
+  if (selectedAccount.value) {
+    await loadCachedAccountMail()
+    syncAll()
+  }
 })
 </script>
 
