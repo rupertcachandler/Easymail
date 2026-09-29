@@ -72,6 +72,14 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("cannot open database: %w", err)
 	}
 
+	// Snapshot the freshly-opened DB so a later corruption can't cost more
+	// than this session's mail. Taken only AFTER store.New() succeeds (so we
+	// never back up a broken file), and BEFORE any account connects or sync
+	// writes, so the copy is a clean point-in-time. We keep the newest N.
+	if err := backupDatabase(dbPath); err != nil {
+		log.Printf("BOI: startup db backup failed (non-fatal): %v", err)
+	}
+
 	a := &App{
 		store:   s,
 		clients: make(map[string]*activesync.Client),
@@ -86,6 +94,24 @@ func New() (*App, error) {
 	}
 
 	return a, nil
+}
+
+// backupDatabase snapshots the SQLite DB to a timestamped sibling file
+// (boi.db.bak-YYYYMMDD-HHMMSS) so a future corruption can't cost more than
+// the startup snapshot. Runs once at startup on a freshly-opened (known-good)
+// DB, before any sync writes. Copies via ReadFile/WriteFile.
+func backupDatabase(dbPath string) error {
+	data, err := os.ReadFile(dbPath)
+	if err != nil {
+		return fmt.Errorf("read db for backup: %w", err)
+	}
+	ts := time.Now().Format("20060102-150405")
+	backup := fmt.Sprintf("%s.bak-%s", dbPath, ts)
+	if err := os.WriteFile(backup, data, 0o600); err != nil {
+		return fmt.Errorf("write backup %s: %w", backup, err)
+	}
+	log.Printf("BOI: db backup written -> %s (%d bytes)", backup, len(data))
+	return nil
 }
 
 // Startup is called when the app starts

@@ -812,6 +812,19 @@ async function loadCachedAccountMail() {
   try {
     const cached = await wails.call('GetFolders', selectedAccount.value) || []
     if (cached.length) folders.value = cached
+    // Ensure the Inbox+Sent default is set BEFORE we load cache, otherwise an
+    // account the user never manually subscribed shows nothing (syncedFolderIds
+    // empty → toSync empty → cached mail skipped). This mirrors the default
+    // that syncAllLocked would apply, but works straight from the cached
+    // folders so mail renders instantly on switch.
+    if (syncedFolderIds.value.length === 0) {
+      const mf = cached.filter(f => SYNCABLE_TYPES.includes(f.type))
+      const inbox = mf.find(f => f.type === 2)
+      const sent = mf.find(f => f.type === 5)
+      if (inbox && !syncedFolderIds.value.includes(inbox.id)) syncedFolderIds.value.push(inbox.id)
+      if (sent && !syncedFolderIds.value.includes(sent.id)) syncedFolderIds.value.push(sent.id)
+      persistSyncedFolders()
+    }
   } catch (e) { console.error('[BOI] cache load folders failed', e) }
   try { await loadAllEmails() } catch (e) { console.error('[BOI] cache load emails failed', e) }
 }
@@ -858,19 +871,25 @@ async function syncAllLocked() {
       if (sent) syncedFolderIds.value.push(sent.id)
       persistSyncedFolders()
     }
-    // Show yesterday's mail immediately from the local cache, then sync every
-    // folder in the background, then refresh once at the end so the list
-    // settles on the final result. Refreshing only once (instead of after
-    // every folder) stops the flicker while syncing.
-    await loadAllEmails()
-
+    // Show the current cached mail FIRST — the mail is already on screen from
+    // loadCachedAccountMail()/startup, so the list is live and readable. Sync
+    // each folder in the background and merge results INCREMENTALLY (per
+    // folder) so the UI stays responsive and never blanks:
+    //   - reloadFolderEmails() merges just that folder's mail into the list —
+    //     it does NOT rebuild the whole 4,000+ item array, so the reading view
+    //     keeps responding and Belinda can answer a mail mid-sync.
+    //   - No full loadAllEmails() in the middle, which would re-render the
+    //     entire list on the UI thread and freeze reading.
     const toSync = mf.filter(f => syncedFolderIds.value.includes(f.id))
     for (const f of toSync) {
-      try { await wails.call('SyncEmails', selectedAccount.value, f.serverId) } catch (e2) { console.error('[BOI] sync emails failed for', f.name, e2) }
+      try {
+        await wails.call('SyncEmails', selectedAccount.value, f.serverId)
+        await reloadFolderEmails(f)
+      } catch (e2) { console.error('[BOI] sync emails failed for', f.name, e2) }
     }
-    await loadAllEmails()
 
-    // Contacts (type 9) + Calendar (type 8): sync each, then load.
+    // Contacts (type 9) + Calendar (type 8): sync then load — also non-blocking
+    // (async reads into their own refs, nothing the mail view depends on).
     const cc = folders.value.find(f => f.type === 9)
     if (cc) { try { await wails.call('SyncContacts', selectedAccount.value, cc.serverId) } catch (e) { /* ok */ } }
     try { contacts.value = await wails.call('SearchContacts', selectedAccount.value, '') || [] } catch (e) { contacts.value = [] }
@@ -1718,15 +1737,11 @@ watch(selectedAccount, () => {
   // account 1's folder IDs (folder ids are account-scoped), so its folders are never
   // in toSync → no mail shown, and the non-empty array skips the Inbox+Sent default.
   restoreSyncedFolders()
-  if (selectedAccount.value) {
-    // Show the selected account's cached mail IMMEDIATELY (GetFolders + GetEmails
-    // are fast local-cache reads — no network), then let syncAll top up new mail
-    // in the background. Without this the list stays blank for the whole
-    // SyncFolders round-trip on switch (which can take seconds if the account
-    // is still connecting), which read as 'no mail until a sync runs'.
-    loadCachedAccountMail()
-    syncAll()
-  }
+  loadCachedAccountMail()
+  // Fire the background sync but DO NOT block on it. It must not run before the
+  // cache load fills the list (see loadCachedAccountMail), and the app must stay
+  // responsive for reading while the sync tops up in the background.
+  syncAll()
 })
 </script>
 
