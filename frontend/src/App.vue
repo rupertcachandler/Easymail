@@ -802,6 +802,19 @@ async function loadAllEmails() {
   }
   allEmails.value = all
 }
+
+// Show the selected account's cached mail straight away on an account switch,
+// WITHOUT waiting for a network sync. GetFolders + GetEmails are local-cache
+// reads (instant — no EAS round-trip), so switching accounts should feel
+// instant: cached mail appears immediately, and the follow-up syncAll() tops
+// up anything new in the background.
+async function loadCachedAccountMail() {
+  try {
+    const cached = await wails.call('GetFolders', selectedAccount.value) || []
+    if (cached.length) folders.value = cached
+  } catch (e) { console.error('[BOI] cache load folders failed', e) }
+  try { await loadAllEmails() } catch (e) { console.error('[BOI] cache load emails failed', e) }
+}
 // Reload a single folder's mail from cache and merge it into the full list —
 // used by the emails-updated event so a background poll round only touches
 // the folder that changed, instead of re-fetching every folder and re-
@@ -1705,7 +1718,15 @@ watch(selectedAccount, () => {
   // account 1's folder IDs (folder ids are account-scoped), so its folders are never
   // in toSync → no mail shown, and the non-empty array skips the Inbox+Sent default.
   restoreSyncedFolders()
-  if (selectedAccount.value) syncAll()
+  if (selectedAccount.value) {
+    // Show the selected account's cached mail IMMEDIATELY (GetFolders + GetEmails
+    // are fast local-cache reads — no network), then let syncAll top up new mail
+    // in the background. Without this the list stays blank for the whole
+    // SyncFolders round-trip on switch (which can take seconds if the account
+    // is still connecting), which read as 'no mail until a sync runs'.
+    loadCachedAccountMail()
+    syncAll()
+  }
 })
 </script>
 
