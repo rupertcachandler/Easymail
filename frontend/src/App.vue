@@ -828,17 +828,38 @@ async function loadCachedAccountMail() {
   } catch (e) { console.error('[BOI] cache load folders failed', e) }
   try { await loadAllEmails() } catch (e) { console.error('[BOI] cache load emails failed', e) }
 }
-// Reload a single folder's mail from cache and merge it into the full list —
-// used by the emails-updated event so a background poll round only touches
-// the folder that changed, instead of re-fetching every folder and re-
-// rendering the whole list (the old loadAllEmails() on every poll round froze
-// the UI for seconds on this box).
+// Reload a single folder's mail from cache and merge it into the full list.
+// The merge itself is cheap; the expensive part is that touching allEmails.value
+// triggers peopleGroups/personEmails/sortedPeople (each a full walk of the
+// whole cache) synchronously on the UI thread. During a sync both reloadFolderEmails
+// AND the emails-updated event can fire several times, each triggering that chain
+// → the 20s freeze where even the account selector is dead.
+// Fix: stage the new list and commit it through the SAME debounced refresh the
+// background poll uses, so many folder merges coalesce into ONE recompute instead
+// of a storm. The reading view stays live (it's the same allEmails array in place),
+// and after the debounce window one clean recompute lands.
+let _stagedEmails: Email[] | null = null
+let _stagedTimer: any = null
+function commitStagedEmails() {
+  if (_stagedEmails !== null) {
+    allEmails.value = _stagedEmails
+    _stagedEmails = null
+  }
+}
+function scheduleEmailsRefresh() {
+  if (_stagedTimer) { clearTimeout(_stagedTimer); _stagedTimer = null }
+  _stagedTimer = setTimeout(() => { _stagedTimer = null; commitStagedEmails() }, 250)
+}
 async function reloadFolderEmails(folder: any) {
   try {
     const em = await wails.call('GetEmails', selectedAccount.value, folder.id, 0, 10000) || []
     const other = allEmails.value.filter(e => e.folderId !== folder.id)
     // Keep the full list sorted newest-first, matching the main view.
-    allEmails.value = other.concat(em).sort((a, b) => new Date(b.dateReceived).getTime() - new Date(a.dateReceived).getTime())
+    const merged = other.concat(em).sort((a, b) => new Date(b.dateReceived).getTime() - new Date(a.dateReceived).getTime())
+    // Stage + commit once via the debounce so a burst of folder merges costs ONE
+    // recompute, not one per folder.
+    _stagedEmails = merged
+    scheduleEmailsRefresh()
   } catch (e) { console.error('[BOI] reload emails failed for', folder.name, e) }
 }
 async function syncAllLocked() {
