@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"crypto/tls"
+	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"log"
@@ -10,8 +11,10 @@ import (
 	"net/smtp"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -47,6 +50,12 @@ type App struct {
 	activityLog  *os.File
 	activityPath string
 	activityMu   sync.Mutex
+
+	// Self-healing state: healMu single-flights a repair, healing blocks
+	// re-entry while one is running (a poll round can trip several corrupt
+	// writes before the heal finishes).
+	healMu  sync.Mutex
+	healing atomic.Bool
 }
 
 // New creates a new App instance
@@ -72,17 +81,37 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("cannot open database: %w", err)
 	}
 
-	// Snapshot the freshly-opened DB so a later corruption can't cost more
-	// than this session's mail. Taken only AFTER store.New() succeeds (so we
-	// never back up a broken file), and BEFORE any account connects or sync
-	// writes, so the copy is a clean point-in-time. We keep the newest N.
-	if err := backupDatabase(dbPath); err != nil {
-		log.Printf("BOI: startup db backup failed (non-fatal): %v", err)
-	}
-
 	a := &App{
 		store:   s,
 		clients: make(map[string]*activesync.Client),
+	}
+
+	// Integrity gate: SQLite happily opens a corrupt file, and sync writes
+	// into a damaged btree then fail silently for days (seen 2026-10-02 and
+	// 2026-10-15). quick_check before anything else touches the DB; heal now
+	// if it fails — mail is a cache, the server re-backfills whatever a
+	// recovery cannot salvage.
+	var healNote string
+	if err := s.IntegrityCheck(); err != nil {
+		log.Printf("BOI: database integrity check FAILED: %v", err)
+		how, rerr := s.RecoverNow()
+		if rerr != nil {
+			log.Printf("BOI: database self-heal failed: %v (continuing with fresh DB)", rerr)
+		} else {
+			log.Printf("BOI: database self-heal done via %s", how)
+			healNote = how
+		}
+		if err := s.IntegrityCheck(); err != nil {
+			log.Printf("BOI: database STILL unhealthy after self-heal: %v", err)
+		}
+	}
+
+	// Snapshot the freshly-opened (and now known-good) DB so a later
+	// corruption can't cost more than this session's mail. Taken BEFORE any
+	// account connects or sync writes, so the copy is a clean point-in-time.
+	// We keep the newest N (pruneBackups).
+	if err := backupDatabase(s.Path()); err != nil {
+		log.Printf("BOI: startup db backup failed (non-fatal): %v", err)
 	}
 
 	// Activity log lives next to the DB — same dir, human-readable file.
@@ -92,15 +121,24 @@ func New() (*App, error) {
 	if err := a.logActivity("BOI startup"); err != nil {
 		log.Printf("BOI: activity log init failed (non-fatal): %v", err)
 	}
+	if healNote != "" {
+		a.logActivity("DB CORRUPTION found at startup — self-healed via " + healNote)
+	}
 
 	return a, nil
 }
 
 // backupDatabase snapshots the SQLite DB to a timestamped sibling file
 // (boi.db.bak-YYYYMMDD-HHMMSS) so a future corruption can't cost more than
-// the startup snapshot. Runs once at startup on a freshly-opened (known-good)
-// DB, before any sync writes. Copies via ReadFile/WriteFile.
+// the last snapshot. Best-effort WAL checkpoint first so the copy includes
+// recent commits that still live in the -wal file. Runs at startup (on a
+// known-good DB, before any sync writes) and daily before the reconcile; the
+// newest few are kept by pruneBackups.
 func backupDatabase(dbPath string) error {
+	if db, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000"); err == nil {
+		_, _ = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+		db.Close()
+	}
 	data, err := os.ReadFile(dbPath)
 	if err != nil {
 		return fmt.Errorf("read db for backup: %w", err)
@@ -111,7 +149,64 @@ func backupDatabase(dbPath string) error {
 		return fmt.Errorf("write backup %s: %w", backup, err)
 	}
 	log.Printf("BOI: db backup written -> %s (%d bytes)", backup, len(data))
+	pruneBackups(dbPath)
 	return nil
+}
+
+// pruneBackups keeps the newest 3 startup backups and the newest 3 corrupt
+// quarantines (each including any -wal/-shm sidecars) and deletes older ones
+// so a ~260MB DB directory can't grow unbounded.
+func pruneBackups(dbPath string) {
+	const keep = 3
+	for _, prefix := range []string{dbPath + ".bak-", dbPath + ".corrupt-"} {
+		groups := map[string]time.Time{}
+		entries, _ := filepath.Glob(prefix + "*")
+		for _, e := range entries {
+			base := strings.TrimSuffix(strings.TrimSuffix(e, "-wal"), "-shm")
+			if fi, err := os.Stat(base); err == nil && fi.ModTime().After(groups[base]) {
+				groups[base] = fi.ModTime()
+			}
+		}
+		bases := make([]string, 0, len(groups))
+		for b := range groups {
+			bases = append(bases, b)
+		}
+		sort.Slice(bases, func(i, j int) bool { return groups[bases[i]].After(groups[bases[j]]) })
+		if len(bases) > keep {
+			for _, stale := range bases[keep:] {
+				for _, suffix := range []string{"", "-wal", "-shm"} {
+					os.Remove(stale + suffix)
+				}
+				if stale != "" {
+					log.Printf("BOI: pruned old backup/quarantine %s", filepath.Base(stale))
+				}
+			}
+		}
+	}
+}
+
+// selfHeal repairs a corrupted local database in place and swaps the
+// store's underlying handle so the app keeps running without a restart.
+// Called wherever SQLite reports corruption (poll round, sync saves).
+// Single-flighted via healing/healMu so concurrent callers don't double-heal.
+func (a *App) selfHeal(trigger string) {
+	if !a.healing.CompareAndSwap(false, true) {
+		return // a heal is already running
+	}
+	defer a.healing.Store(false)
+	a.healMu.Lock()
+	defer a.healMu.Unlock()
+
+	log.Printf("selfHeal: database corruption detected (via %s) — repairing", trigger)
+	a.logActivity("DB CORRUPTION detected (via " + trigger + ") — self-healing")
+	how, err := a.store.RecoverNow()
+	if err != nil {
+		log.Printf("selfHeal: FAILED: %v", err)
+		a.logActivity("DB self-heal FAILED: " + err.Error())
+		return
+	}
+	log.Printf("selfHeal: done via %s", how)
+	a.logActivity("DB self-heal complete via " + how + " — resyncing from server")
 }
 
 // Startup is called when the app starts
@@ -403,13 +498,28 @@ func (a *App) applySyncResults(accountID, serverID string, trigger string, email
 	folderID := accountID + "-" + serverID
 	fname := a.folderName(accountID, serverID)
 	var n, newN int
+	var firstSaveErr error
 	for _, e := range emails {
 		isNew := false
-		if ok, err := a.store.EmailExists(folderID, e.ServerID); err == nil && !ok {
-			isNew = true
+		if ok, err := a.store.EmailExists(folderID, e.ServerID); err != nil {
+			// A corrupt DB used to make this error read as "not new",
+			// silently dropping the RECV audit trail — treat corruption as
+			// the emergency it is.
+			if store.IsCorruption(err) {
+				a.selfHeal("exists-check")
+			}
+		} else {
+			isNew = !ok
 		}
 		if err := a.store.SaveEmail(e); err != nil {
+			if store.IsCorruption(err) {
+				a.selfHeal("save-email")
+			}
 			log.Printf("Warning: cannot save email %s: %v", e.ServerID, err)
+			if firstSaveErr == nil {
+				firstSaveErr = err
+				a.logActivity(fmt.Sprintf("SYNC-ERROR folder=%s email=%s: %v", fname, e.ServerID, err))
+			}
 		} else {
 			n++
 			if isNew {
@@ -1255,6 +1365,12 @@ func (a *App) startDailyReconcile() {
 		last, _ := time.Parse(time.RFC3339, lastStr)
 		due := last.IsZero() || time.Since(last) >= window
 		if due {
+			// Snapshot + prune before the wide reconcile — a daily fresh
+			// backup bounds corruption loss to ~a day instead of "since last
+			// restart".
+			if err := backupDatabase(a.store.Path()); err != nil {
+				log.Printf("startDailyReconcile: db backup failed (non-fatal): %v", err)
+			}
 			a.runReconcileOnce()
 			if err := a.store.MetaSet("reconcile_last", time.Now().Format(time.RFC3339)); err != nil {
 				log.Printf("startDailyReconcile: failed to persist last-run: %v", err)
@@ -1309,6 +1425,9 @@ func (a *App) pollMailOnce() {
 		folders, err := a.store.ListFolders(accountID)
 		if err != nil {
 			log.Printf("pollMailOnce: list folders %s failed: %v", accountID, err)
+			if store.IsCorruption(err) {
+				a.selfHeal("poll-list-folders")
+			}
 			continue
 		}
 		for _, f := range folders {
@@ -1317,7 +1436,15 @@ func (a *App) pollMailOnce() {
 			}
 			folderID := accountID + "-" + f.ServerID
 			count, err := a.store.CountEmails(folderID)
-			if err != nil || count == 0 {
+			if err != nil {
+				log.Printf("pollMailOnce: count emails %s failed: %v", folderID, err)
+				if store.IsCorruption(err) {
+					a.selfHeal("poll-count-emails")
+				}
+				skipped++
+				continue
+			}
+			if count == 0 {
 				skipped++
 				continue
 			}
