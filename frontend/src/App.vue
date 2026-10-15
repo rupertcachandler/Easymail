@@ -1249,6 +1249,8 @@ function sigById(id: string): SavedSignature | undefined {
 
 function openCompose(to = '', subject = '', body = '', cc = '') {
   composeTo.value = to; composeSubject.value = subject; composeBody.value = body; composeCc.value = cc; composeBcc.value = ''
+  // An empty body means this isn't a forward prefill — clear any stale
+  // forward flag. (openForward re-sets it after calling us.)
   if (!body) composeForwardId.value = null
   // Preselect this account's default signature ('' = none)
   composeSigId.value = sigDefaultId()
@@ -1337,32 +1339,16 @@ function openReplyAll() {
 
 function openForward() {
   if (!selectedEmail.value) return
+  // Note: set the forward flag AFTER openCompose — openCompose resets it on
+  // an empty body (the reset is for other compose entry points).
+  openCompose('', 'Fwd: ' + selectedEmail.value.subject)
   composeForwardId.value = selectedEmail.value.id
-  openCompose('', 'Fwd: ' + selectedEmail.value.subject, quoteForForward(selectedEmail.value))
 }
 
 // composeForwardId holds the email being forwarded (so the send path knows
-// to call ForwardEmail and actually attach the original's files). Null means
-// a normal compose. Until 0.4.89 forwards sent NOTHING of the original —
-// no quote, no attachments.
+// to call ForwardEmail: original body quoted with formatting intact + its
+// attachments attached). Null means a normal compose.
 const composeForwardId = ref<string|null>(null)
-
-function quoteForForward(e: Email): string {
-  const strip = (s: string) => s
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .trim()
-  const text = (e.bodyType || '').toUpperCase().includes('HTML') ? strip(e.body || '') : (e.body || e.preview || '')
-  return '\n\n---------- Forwarded message ----------\n' +
-    'From: ' + (e.from || e.fromEmail || '') + '\n' +
-    'Date: ' + new Date(e.dateReceived).toLocaleString() + '\n' +
-    'Subject: ' + (e.subject || '') + '\n\n' + text + '\n'
-}
 
 const downloadingRef = ref<string|null>(null)
 const openingRef = ref<string|null>(null)
@@ -2050,7 +2036,7 @@ watch(selectedAccount, async () => {
       </div>
       <div class="form-group"><label>Subject</label><input v-model="composeSubject" placeholder="Subject" /></div>
       <div v-if="composeForwardId" class="form-group compose-forward-note" style="font-size:12px;opacity:.75">
-        Forwarding — the original email's attachments will be attached to this message.
+        Forwarding — the original message (formatting preserved) and its attachments will be included below your text.
       </div>
       <div class="form-group"><label>Message</label><textarea v-model="composeBody" rows="8" placeholder="Write your message..."></textarea></div>
       <div class="form-group">

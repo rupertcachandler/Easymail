@@ -750,6 +750,28 @@ func (s *Store) EmailExists(folderID, serverID string) (bool, error) {
 	return true, nil
 }
 
+// GetEmail loads one email by local ID (including its attachments).
+// Used by ForwardEmail to pull the original's body/bodyType for building
+// proper multipart/alternative forwards.
+func (s *Store) GetEmail(emailID string) (*models.Email, error) {
+	rows, err := s.handle().Query(`SELECT id, account_id, folder_id, server_id, from_name, from_email,
+		to_text, to_emails, cc_text, cc_emails, subject, thread_topic, date_received,
+		is_read, is_flagged, importance, has_attachment, preview, body, body_type
+		FROM emails WHERE id = ?`, emailID)
+	if err != nil {
+		return nil, fmt.Errorf("get email: %w", err)
+	}
+	defer rows.Close()
+	list, err := s.scanEmails(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(list) == 0 {
+		return nil, fmt.Errorf("email %s not found", emailID)
+	}
+	return list[0], nil
+}
+
 func (s *Store) ListEmails(accountID, folderID string, offset, limit int) ([]*models.Email, error) {
 	rows, err := s.handle().Query(`SELECT id, account_id, folder_id, server_id, from_name, from_email,
 		to_text, to_emails, cc_text, cc_emails, subject, thread_topic, date_received,

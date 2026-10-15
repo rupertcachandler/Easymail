@@ -8,11 +8,13 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"html"
 	"log"
 	"net/mail"
 	"net/smtp"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -1118,7 +1120,7 @@ type OutgoingAttachment struct {
 
 // SendMail sends an email via SMTP (STARTTLS on port 587)
 func (a *App) SendMail(accountID, to, cc, bcc, subject, body string) error {
-	return a.sendMessage(accountID, to, cc, bcc, subject, body, nil)
+	return a.sendMessage(accountID, to, cc, bcc, subject, body, "", nil)
 }
 
 // ForwardEmail sends a forwarded message with the ORIGINAL email's
@@ -1157,10 +1159,32 @@ func (a *App) ForwardEmail(accountID, emailID, to, cc, bcc, subject, body string
 		log.Printf("ForwardEmail: attachment fetch failed, NOT sending: %v", failed)
 		return fmt.Errorf("attachment fetch failed, mail NOT sent: %s", strings.Join(failed, "; "))
 	}
-	if err := a.sendMessage(accountID, to, cc, bcc, subject, body, atts); err != nil {
+	// Build the forwarded content. When the original is HTML, emit a
+	// multipart/alternative: text/plain fallback + the ORIGINAL'S HTML kept
+	// intact inside a blockquote (plain-text stripping mangles layout — the
+	// 2026-10-15 "jumble of text" complaint).
+	plainBody := body
+	htmlPart := ""
+	if orig, err := a.store.GetEmail(emailID); err == nil && strings.EqualFold(orig.BodyType, "html") && orig.Body != "" {
+		who := orig.From
+		if who == "" {
+			who = orig.FromEmail
+		}
+		plainBody = body +
+			"\n\n---------- Forwarded message ----------\n" +
+			"From: " + who + "\n" +
+			"Date: " + orig.DateReceived.Format(time.RFC1123Z) + "\n" +
+			"Subject: " + orig.Subject + "\n\n" +
+			htmlToText(orig.Body)
+		hdr := fmt.Sprintf(`<div style="margin:8px 0;font-family:sans-serif;color:#555">---------- Forwarded message ----------<br>From: %s<br>Date: %s<br>Subject: %s</div>`,
+			html.EscapeString(who), html.EscapeString(orig.DateReceived.Format(time.RFC1123Z)), html.EscapeString(orig.Subject))
+		htmlPart = fmt.Sprintf(`<div style="font-family:sans-serif">%s</div>%s<hr><blockquote style="margin:8px 0;padding-left:12px;border-left:3px solid #ccc">%s</blockquote>`,
+			plainToHTML(body), hdr, orig.Body)
+	}
+	if err := a.sendMessage(accountID, to, cc, bcc, subject, plainBody, htmlPart, atts); err != nil {
 		return err
 	}
-	a.logActivity(fmt.Sprintf("FORWARD email=%s attachments=%d to=%s subject=%q", emailID, len(atts), to, subject))
+	a.logActivity(fmt.Sprintf("FORWARD email=%s attachments=%d html=%v to=%s subject=%q", emailID, len(atts), htmlPart != "", to, subject))
 	return nil
 }
 
@@ -1216,9 +1240,13 @@ func (a *App) OpenAttachment(accountID, fileReference, suggestedName string) (st
 }
 
 // sendMessage is the SMTP delivery path shared by SendMail and ForwardEmail.
-// With no attachments it emits the historical plain text/plain message;
-// with attachments it emits multipart/mixed (body part + base64 parts).
-func (a *App) sendMessage(accountID, to, cc, bcc, subject, body string, atts []OutgoingAttachment) error {
+// Emission matrix:
+//
+//	no html, no atts  -> plain text/plain (historical format, unchanged)
+//	no html, atts     -> multipart/mixed [text/plain, attachments]
+//	html              -> multipart/mixed [multipart/alternative
+//	                     [text/plain, text/html], attachments]
+func (a *App) sendMessage(accountID, to, cc, bcc, subject, body, htmlBody string, atts []OutgoingAttachment) error {
 	log.Printf("sendMessage: account=%s to=%s cc=%s bcc=<%d chars> subject=%q attachments=%d", accountID, to, cc, len(bcc), subject, len(atts))
 	acc, err := a.store.GetAccount(accountID)
 	if err != nil {
@@ -1243,11 +1271,12 @@ func (a *App) sendMessage(accountID, to, cc, bcc, subject, body string, atts []O
 		}
 	}
 
-	// Build the message. With attachments: multipart/mixed with the body as
-	// the first part and each attachment base64-encoded after it. Without:
-	// the historical plain text/plain body, byte-for-byte unchanged.
+	// Build the message. Emission matrix:
+	//   no html, no atts -> plain text/plain (historical format)
+	//   html and/or atts -> multipart/mixed; html adds a multipart/alternative
+	//   (text/plain fallback + text/html) as the first part.
 	boundary := ""
-	if len(atts) > 0 {
+	if htmlBody != "" || len(atts) > 0 {
 		boundary = "boi-mixed-" + randHex(16)
 	}
 	header := make(map[string]string)
@@ -1276,15 +1305,35 @@ func (a *App) sendMessage(accountID, to, cc, bcc, subject, body string, atts []O
 	}
 	msg.WriteString("\r\n")
 	if boundary == "" {
-		msg.WriteString(body)
+		msg.WriteString(normalizeCRLF(body))
 	} else {
 		msg.WriteString("This is a multi-part message in MIME format.\r\n")
-		// Body part.
-		msg.WriteString("--" + boundary + "\r\n")
-		msg.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
-		msg.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
-		msg.WriteString(body)
-		msg.WriteString("\r\n")
+		if htmlBody == "" {
+			// Plain body part.
+			msg.WriteString("--" + boundary + "\r\n")
+			msg.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+			msg.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+			msg.WriteString(normalizeCRLF(body))
+			msg.WriteString("\r\n")
+		} else {
+			// multipart/alternative: plain fallback + original HTML intact.
+			alt := "boi-alt-" + randHex(16)
+			msg.WriteString("--" + boundary + "\r\n")
+			msg.WriteString(`Content-Type: multipart/alternative; boundary="` + alt + "\"\r\n\r\n")
+			msg.WriteString("--" + alt + "\r\n")
+			msg.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+			msg.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+			msg.WriteString(normalizeCRLF(body))
+			msg.WriteString("\r\n")
+			msg.WriteString("--" + alt + "\r\n")
+			msg.WriteString("Content-Type: text/html; charset=utf-8\r\n")
+			// base64: forwarded HTML can carry arbitrarily long lines, which
+			// breaks SMTP's 998-octet limit.
+			msg.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+			msg.WriteString(base64Wrapped([]byte(normalizeCRLF(htmlBody))))
+			msg.WriteString("\r\n")
+			msg.WriteString("--" + alt + "--\r\n")
+		}
 		// Attachment parts — base64 at the RFC 2045 line length.
 		for _, att := range atts {
 			mime := att.MIME
@@ -1411,6 +1460,40 @@ func (a *App) fileSentCopyBestEffort(accountID, from, to, cc, subject, body stri
 }
 
 // === Internal ===
+
+// normalizeCRLF converts lone \n to \r\n — SMTP requires CRLF, and compose
+// textarea content only carries \n.
+func normalizeCRLF(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.ReplaceAll(s, "\n", "\r\n")
+}
+
+// htmlToText reduces an HTML email body to readable plain text (block-level
+// newlines preserved, tags stripped, entities decoded). Used for the
+// text/plain fallback of forwarded HTML mail.
+func htmlToText(s string) string {
+	r := strings.NewReplacer(
+		"<br>", "\n", "<br/>", "\n", "<br />", "\n", "<BR>", "\n",
+		"</p>", "\n\n", "</div>", "\n", "</tr>", "\n", "</li>", "\n",
+		"</h1>", "\n\n", "</h2>", "\n\n", "</h3>", "\n\n", "</h4>", "\n\n",
+		"</blockquote>", "\n", "</table>", "\n",
+	)
+	s = r.Replace(s)
+	s = reHTMLTag.ReplaceAllString(s, "")
+	s = html.UnescapeString(s)
+	s = reBlankRuns.ReplaceAllString(s, "\n\n")
+	return strings.TrimSpace(s)
+}
+
+var (
+	reHTMLTag   = regexp.MustCompile(`(?s)<[^>]*>`)
+	reBlankRuns = regexp.MustCompile(`\n{3,}`)
+)
+
+// plainToHTML escapes plain text and preserves line breaks as <br>.
+func plainToHTML(s string) string {
+	return strings.ReplaceAll(html.EscapeString(s), "\n", "<br>")
+}
 
 // randHex returns a random hex string of n bytes, for MIME boundaries.
 func randHex(n int) string {
