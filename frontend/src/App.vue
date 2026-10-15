@@ -2041,7 +2041,7 @@ watch(selectedAccount, async () => {
       <div v-if="composeForwardId" class="form-group compose-forward-note" style="font-size:12px;opacity:.75">
         Forwarding — the original message (formatting preserved) and its attachments will be included below your text.
       </div>
-      <div class="form-group"><label>Message</label><textarea v-model="composeBody" rows="8" placeholder="Write your message..."></textarea></div>
+      <div class="form-group"><label>Message</label><textarea v-model="composeBody" class="compose-body" rows="14" placeholder="Write your message..."></textarea></div>
       <div class="form-group">
         <label>Signature</label>
         <select v-model="composeSigId" class="account-sel">

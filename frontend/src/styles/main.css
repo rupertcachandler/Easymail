@@ -519,6 +519,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 }
 .form-group input:focus, .form-group textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 .form-group textarea { resize: vertical; min-height: 100px; }
+/* Compose box: decent length mails need room; resize:vertical already lets
+   users drag it further, this just raises the starting point. */
+.form-group textarea.compose-body { min-height: 320px; font-size: 14px; line-height: 1.5; }
 .error-text { color: var(--danger); font-size: 13px; padding: 8px 0; }
 .success-msg { color: var(--success); font-size: 13px; padding: 8px 0; }
 
