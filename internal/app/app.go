@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/mail"
@@ -1105,7 +1107,67 @@ func (a *App) SetOOFSettings(accountID string, settings *models.OOFSettings) err
 	return client.SetOOFSettings(a.ctx, settings)
 }
 
+// OutgoingAttachment carries one attachment's bytes into the SMTP message
+// builder. Data is the raw file content; MIME may be empty (falls back to
+// application/octet-stream).
+type OutgoingAttachment struct {
+	Filename string `json:"filename"`
+	MIME     string `json:"mime"`
+	Data     []byte `json:"data"`
+}
+
 // SendMail sends an email via SMTP (STARTTLS on port 587)
+func (a *App) SendMail(accountID, to, cc, bcc, subject, body string) error {
+	return a.sendMessage(accountID, to, cc, bcc, subject, body, nil)
+}
+
+// ForwardEmail sends a forwarded message with the ORIGINAL email's
+// attachments actually attached. Until 0.4.89 SendMail only emitted plain
+// text, so forwards went out without any of the original's files — the bytes
+// stayed on this machine. Attachment fetch failures abort the whole send:
+// a partially-attached forward is worse than a failed one.
+func (a *App) ForwardEmail(accountID, emailID, to, cc, bcc, subject, body string) error {
+	log.Printf("ForwardEmail: email=%s to=%s subject=%q", emailID, to, subject)
+	rows, err := a.store.EmailAttachments(emailID)
+	if err != nil {
+		return fmt.Errorf("cannot load original attachments: %w", err)
+	}
+	c, ok := a.clients[accountID]
+	if !ok {
+		return fmt.Errorf("account not connected")
+	}
+	var atts []OutgoingAttachment
+	var failed []string
+	for _, row := range rows {
+		if row.IsInline || row.FileReference == "" {
+			continue // inline images belong to HTML bodies we don't forward
+		}
+		data, mime, err := c.FetchAttachment(a.ctx, row.FileReference)
+		if err != nil {
+			failed = append(failed, row.DisplayName+": "+err.Error())
+			continue
+		}
+		name := sanitizeFilename(row.DisplayName)
+		if name == "" {
+			name = "attachment"
+		}
+		atts = append(atts, OutgoingAttachment{Filename: name, MIME: mime, Data: data})
+	}
+	if len(failed) > 0 {
+		log.Printf("ForwardEmail: attachment fetch failed, NOT sending: %v", failed)
+		return fmt.Errorf("attachment fetch failed, mail NOT sent: %s", strings.Join(failed, "; "))
+	}
+	if err := a.sendMessage(accountID, to, cc, bcc, subject, body, atts); err != nil {
+		return err
+	}
+	a.logActivity(fmt.Sprintf("FORWARD email=%s attachments=%d to=%s subject=%q", emailID, len(atts), to, subject))
+	return nil
+}
+
+// sendMessage is the SMTP delivery path shared by SendMail and ForwardEmail.
+// With no attachments it emits the historical plain text/plain message;
+// with attachments it emits multipart/mixed (body part + base64 parts).
+// OpenExternal opens a URL in the system browser.
 func (a *App) OpenExternal(url string) {
 	runtime.BrowserOpenURL(a.ctx, url)
 }
@@ -1153,8 +1215,11 @@ func (a *App) OpenAttachment(accountID, fileReference, suggestedName string) (st
 	return tmpPath, nil
 }
 
-func (a *App) SendMail(accountID, to, cc, bcc, subject, body string) error {
-	log.Printf("SendMail: account=%s to=%s cc=%s bcc=<%d chars> subject=%q", accountID, to, cc, len(bcc), subject)
+// sendMessage is the SMTP delivery path shared by SendMail and ForwardEmail.
+// With no attachments it emits the historical plain text/plain message;
+// with attachments it emits multipart/mixed (body part + base64 parts).
+func (a *App) sendMessage(accountID, to, cc, bcc, subject, body string, atts []OutgoingAttachment) error {
+	log.Printf("sendMessage: account=%s to=%s cc=%s bcc=<%d chars> subject=%q attachments=%d", accountID, to, cc, len(bcc), subject, len(atts))
 	acc, err := a.store.GetAccount(accountID)
 	if err != nil {
 		return fmt.Errorf("account not found: %w", err)
@@ -1178,7 +1243,13 @@ func (a *App) SendMail(accountID, to, cc, bcc, subject, body string) error {
 		}
 	}
 
-	// Build the message
+	// Build the message. With attachments: multipart/mixed with the body as
+	// the first part and each attachment base64-encoded after it. Without:
+	// the historical plain text/plain body, byte-for-byte unchanged.
+	boundary := ""
+	if len(atts) > 0 {
+		boundary = "boi-mixed-" + randHex(16)
+	}
 	header := make(map[string]string)
 	header["From"] = from
 	header["To"] = to
@@ -1188,7 +1259,11 @@ func (a *App) SendMail(accountID, to, cc, bcc, subject, body string) error {
 	header["Subject"] = subject
 	header["Date"] = time.Now().Format(time.RFC1123Z)
 	header["MIME-Version"] = "1.0"
-	header["Content-Type"] = "text/plain; charset=utf-8"
+	if boundary != "" {
+		header["Content-Type"] = `multipart/mixed; boundary="` + boundary + `"`
+	} else {
+		header["Content-Type"] = "text/plain; charset=utf-8"
+	}
 	// A personal touch on every outgoing message: name the client and the
 	// pair who built/send it (BOI + Frau Blücher are in the corner).
 	header["X-Mailer"] = "BOI"
@@ -1200,7 +1275,32 @@ func (a *App) SendMail(accountID, to, cc, bcc, subject, body string) error {
 		msg.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
 	}
 	msg.WriteString("\r\n")
-	msg.WriteString(body)
+	if boundary == "" {
+		msg.WriteString(body)
+	} else {
+		msg.WriteString("This is a multi-part message in MIME format.\r\n")
+		// Body part.
+		msg.WriteString("--" + boundary + "\r\n")
+		msg.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+		msg.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+		msg.WriteString(body)
+		msg.WriteString("\r\n")
+		// Attachment parts — base64 at the RFC 2045 line length.
+		for _, att := range atts {
+			mime := att.MIME
+			if mime == "" {
+				mime = "application/octet-stream"
+			}
+			fname := mimeEscape(att.Filename)
+			msg.WriteString("--" + boundary + "\r\n")
+			msg.WriteString(fmt.Sprintf("Content-Type: %s; name=\"%s\"\r\n", mime, fname))
+			msg.WriteString("Content-Transfer-Encoding: base64\r\n")
+			msg.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=\"%s\"\r\n\r\n", fname))
+			msg.WriteString(base64Wrapped(att.Data))
+			msg.WriteString("\r\n")
+		}
+		msg.WriteString("--" + boundary + "--\r\n")
+	}
 
 	// Send via SMTP STARTTLS
 	smtpHost := host + ":587"
@@ -1311,6 +1411,35 @@ func (a *App) fileSentCopyBestEffort(accountID, from, to, cc, subject, body stri
 }
 
 // === Internal ===
+
+// randHex returns a random hex string of n bytes, for MIME boundaries.
+func randHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
+// base64Wrapped encodes data as standard base64 wrapped at 76 columns
+// (the RFC 2045 MIME line length).
+func base64Wrapped(data []byte) string {
+	enc := base64.StdEncoding.EncodeToString(data)
+	var out strings.Builder
+	for len(enc) > 76 {
+		out.WriteString(enc[:76])
+		out.WriteString("\r\n")
+		enc = enc[76:]
+	}
+	out.WriteString(enc)
+	return out.String()
+}
+
+// mimeEscape makes a filename safe for a quoted MIME header parameter.
+func mimeEscape(name string) string {
+	r := strings.NewReplacer("\\", "_", "\"", "'", "\r", " ", "\n", " ")
+	return r.Replace(name)
+}
 
 func (a *App) connectAccount(acc *models.Account) {
 	log.Printf("connectAccount: connecting %s (%s)", acc.Email, acc.ServerURL)

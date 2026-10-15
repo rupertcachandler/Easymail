@@ -858,6 +858,41 @@ func (s *Store) loadAttachments(emails []*models.Email) []*models.Email {
 	return emails
 }
 
+// EmailAttachments returns the attachment rows recorded for one email.
+// file_reference is the SOGo handle ItemOperations Fetch needs to pull the
+// bytes (used by forwarding).
+func (s *Store) EmailAttachments(emailID string) ([]*models.EmailAttachment, error) {
+	rows, err := s.handle().Query(`SELECT email_id, name, mime_type, size, is_inline, content_id, file_reference, method
+		FROM attachments WHERE email_id = ? ORDER BY rowid`, emailID)
+	if err != nil {
+		return nil, fmt.Errorf("attachments query: %w", err)
+	}
+	defer rows.Close()
+	var out []*models.EmailAttachment
+	for rows.Next() {
+		var emailID, name, fileRef string
+		var mimeType, contentID sql.NullString
+		var size, isInline int64
+		var method sql.NullInt64
+		if err := rows.Scan(&emailID, &name, &mimeType, &size, &isInline, &contentID, &fileRef, &method); err != nil {
+			continue
+		}
+		m := 1
+		if method.Valid {
+			m = int(method.Int64)
+		}
+		out = append(out, &models.EmailAttachment{
+			DisplayName:       name,
+			FileReference:     fileRef,
+			ContentId:         contentID.String,
+			IsInline:          isInline == 1,
+			Method:            m,
+			EstimatedDataSize: int(size),
+		})
+	}
+	return out, rows.Err()
+}
+
 // === Contact Operations ===
 
 func (s *Store) upsertContact(accountID, name, email string, lastEmail time.Time) error {

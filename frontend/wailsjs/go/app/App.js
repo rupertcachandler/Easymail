@@ -34,6 +34,10 @@ export function FetchAttachment(arg1, arg2) {
   return window['go']['app']['App']['FetchAttachment'](arg1, arg2);
 }
 
+export function ForwardEmail(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['app']['App']['ForwardEmail'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+
 export function GetActivityLog(arg1) {
   return window['go']['app']['App']['GetActivityLog'](arg1);
 }

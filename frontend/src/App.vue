@@ -32,6 +32,7 @@ const wails = {
         SetOOFSettings: AppBinding.SetOOFSettings,
         Shutdown: AppBinding.Shutdown,
         SendMail: AppBinding.SendMail,
+        ForwardEmail: AppBinding.ForwardEmail,
         FetchAttachment: AppBinding.FetchAttachment,
         DownloadAttachment: AppBinding.DownloadAttachment,
         OpenAttachment: AppBinding.OpenAttachment,
@@ -1248,6 +1249,7 @@ function sigById(id: string): SavedSignature | undefined {
 
 function openCompose(to = '', subject = '', body = '', cc = '') {
   composeTo.value = to; composeSubject.value = subject; composeBody.value = body; composeCc.value = cc; composeBcc.value = ''
+  if (!body) composeForwardId.value = null
   // Preselect this account's default signature ('' = none)
   composeSigId.value = sigDefaultId()
   composeError.value = ''; composeSuccess.value = ''; showCompose.value = true
@@ -1335,7 +1337,31 @@ function openReplyAll() {
 
 function openForward() {
   if (!selectedEmail.value) return
-  openCompose('', 'Fwd: ' + selectedEmail.value.subject)
+  composeForwardId.value = selectedEmail.value.id
+  openCompose('', 'Fwd: ' + selectedEmail.value.subject, quoteForForward(selectedEmail.value))
+}
+
+// composeForwardId holds the email being forwarded (so the send path knows
+// to call ForwardEmail and actually attach the original's files). Null means
+// a normal compose. Until 0.4.89 forwards sent NOTHING of the original —
+// no quote, no attachments.
+const composeForwardId = ref<string|null>(null)
+
+function quoteForForward(e: Email): string {
+  const strip = (s: string) => s
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .trim()
+  const text = (e.bodyType || '').toUpperCase().includes('HTML') ? strip(e.body || '') : (e.body || e.preview || '')
+  return '\n\n---------- Forwarded message ----------\n' +
+    'From: ' + (e.from || e.fromEmail || '') + '\n' +
+    'Date: ' + new Date(e.dateReceived).toLocaleString() + '\n' +
+    'Subject: ' + (e.subject || '') + '\n\n' + text + '\n'
 }
 
 const downloadingRef = ref<string|null>(null)
@@ -1663,7 +1689,14 @@ async function sendCompose() {
   try {
     // If they changed away from the default, remember that choice for this account.
     setSigDefaultId(composeSigId.value)
-    await wails.call('SendMail', selectedAccount.value, composeTo.value, composeCc.value, composeBcc.value, composeSubject.value, signaturePreview())
+    if (composeForwardId.value) {
+      // Forward: re-fetch the original's attachments server-side and attach
+      // them to the outgoing MIME message.
+      await wails.call('ForwardEmail', selectedAccount.value, composeForwardId.value, composeTo.value, composeCc.value, composeBcc.value, composeSubject.value, signaturePreview())
+      composeForwardId.value = null
+    } else {
+      await wails.call('SendMail', selectedAccount.value, composeTo.value, composeCc.value, composeBcc.value, composeSubject.value, signaturePreview())
+    }
     composeSuccess.value = 'Sent!'
     setTimeout(async () => {
       showCompose.value = false; composeSuccess.value = ''
@@ -2016,6 +2049,9 @@ watch(selectedAccount, async () => {
         <div class="form-group"><label>Bcc</label><input v-model="composeBcc" placeholder="bcc@example.com" autocomplete="off" /></div>
       </div>
       <div class="form-group"><label>Subject</label><input v-model="composeSubject" placeholder="Subject" /></div>
+      <div v-if="composeForwardId" class="form-group compose-forward-note" style="font-size:12px;opacity:.75">
+        Forwarding — the original email's attachments will be attached to this message.
+      </div>
       <div class="form-group"><label>Message</label><textarea v-model="composeBody" rows="8" placeholder="Write your message..."></textarea></div>
       <div class="form-group">
         <label>Signature</label>
