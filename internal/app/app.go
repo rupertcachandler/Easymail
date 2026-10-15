@@ -1113,9 +1113,11 @@ func (a *App) SetOOFSettings(accountID string, settings *models.OOFSettings) err
 // builder. Data is the raw file content; MIME may be empty (falls back to
 // application/octet-stream).
 type OutgoingAttachment struct {
-	Filename string `json:"filename"`
-	MIME     string `json:"mime"`
-	Data     []byte `json:"data"`
+	Filename  string `json:"filename"`
+	MIME      string `json:"mime"`
+	Data      []byte `json:"data"`
+	Inline    bool   `json:"inline,omitempty"`
+	ContentID string `json:"contentId,omitempty"`
 }
 
 // SendMail sends an email via SMTP (STARTTLS on port 587)
@@ -1138,22 +1140,47 @@ func (a *App) ForwardEmail(accountID, emailID, to, cc, bcc, subject, body string
 	if !ok {
 		return fmt.Errorf("account not connected")
 	}
+	// Load the original up front: html detection and cid matching both need
+	// the body. body_type is unreliable — sync leaves it empty for some HTML
+	// mails (the 2026-10-15 house-move forward went out bare) — so sniff the
+	// body for "<html" as well.
+	orig, origErr := a.store.GetEmail(emailID)
+	origIsHTML := false
+	if origErr == nil && orig.Body != "" {
+		origIsHTML = strings.EqualFold(orig.BodyType, "html") ||
+			strings.Contains(strings.ToLower(orig.Body), "<html")
+	}
 	var atts []OutgoingAttachment
 	var failed []string
 	for _, row := range rows {
-		if row.IsInline || row.FileReference == "" {
-			continue // inline images belong to HTML bodies we don't forward
+		if row.FileReference == "" {
+			continue
+		}
+		if row.IsInline {
+			// Inline images are only carried when the HTML that references
+			// them is being forwarded; the cid: refs then resolve against
+			// the multipart/related parts sendMessage emits.
+			if !origIsHTML || row.ContentId == "" || !strings.Contains(orig.Body, row.ContentId) {
+				continue
+			}
 		}
 		data, mime, err := c.FetchAttachment(a.ctx, row.FileReference)
 		if err != nil {
 			failed = append(failed, row.DisplayName+": "+err.Error())
 			continue
 		}
-		name := sanitizeFilename(row.DisplayName)
-		if name == "" {
-			name = "attachment"
+		att := OutgoingAttachment{MIME: mime, Data: data, Filename: row.DisplayName}
+		if row.IsInline {
+			att.Inline = true
+			att.ContentID = row.ContentId
+		} else {
+			name := sanitizeFilename(row.DisplayName)
+			if name == "" {
+				name = "attachment"
+			}
+			att.Filename = name
 		}
-		atts = append(atts, OutgoingAttachment{Filename: name, MIME: mime, Data: data})
+		atts = append(atts, att)
 	}
 	if len(failed) > 0 {
 		log.Printf("ForwardEmail: attachment fetch failed, NOT sending: %v", failed)
@@ -1165,7 +1192,7 @@ func (a *App) ForwardEmail(accountID, emailID, to, cc, bcc, subject, body string
 	// 2026-10-15 "jumble of text" complaint).
 	plainBody := body
 	htmlPart := ""
-	if orig, err := a.store.GetEmail(emailID); err == nil && strings.EqualFold(orig.BodyType, "html") && orig.Body != "" {
+	if origErr == nil && origIsHTML {
 		who := orig.From
 		if who == "" {
 			who = orig.FromEmail
@@ -1184,7 +1211,13 @@ func (a *App) ForwardEmail(accountID, emailID, to, cc, bcc, subject, body string
 	if err := a.sendMessage(accountID, to, cc, bcc, subject, plainBody, htmlPart, atts); err != nil {
 		return err
 	}
-	a.logActivity(fmt.Sprintf("FORWARD email=%s attachments=%d html=%v to=%s subject=%q", emailID, len(atts), htmlPart != "", to, subject))
+	nInline := 0
+	for _, att := range atts {
+		if att.Inline {
+			nInline++
+		}
+	}
+	a.logActivity(fmt.Sprintf("FORWARD email=%s attachments=%d inline=%d html=%v to=%s subject=%q", emailID, len(atts), nInline, htmlPart != "", to, subject))
 	return nil
 }
 
@@ -1299,6 +1332,13 @@ func (a *App) sendMessage(accountID, to, cc, bcc, subject, body, htmlBody string
 	header["X-Powered-By"] = "Rupert & Frau Blücher"
 	header["X-Frau-Blucher"] = "the horses know what that means"
 
+	var inlineAtts []OutgoingAttachment
+	for _, att := range atts {
+		if att.Inline {
+			inlineAtts = append(inlineAtts, att)
+		}
+	}
+
 	var msg strings.Builder
 	for k, v := range header {
 		msg.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
@@ -1317,25 +1357,56 @@ func (a *App) sendMessage(accountID, to, cc, bcc, subject, body, htmlBody string
 			msg.WriteString("\r\n")
 		} else {
 			// multipart/alternative: plain fallback + original HTML intact.
-			alt := "boi-alt-" + randHex(16)
-			msg.WriteString("--" + boundary + "\r\n")
-			msg.WriteString(`Content-Type: multipart/alternative; boundary="` + alt + "\"\r\n\r\n")
-			msg.WriteString("--" + alt + "\r\n")
-			msg.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
-			msg.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
-			msg.WriteString(normalizeCRLF(body))
-			msg.WriteString("\r\n")
-			msg.WriteString("--" + alt + "\r\n")
-			msg.WriteString("Content-Type: text/html; charset=utf-8\r\n")
-			// base64: forwarded HTML can carry arbitrarily long lines, which
-			// breaks SMTP's 998-octet limit.
-			msg.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
-			msg.WriteString(base64Wrapped([]byte(normalizeCRLF(htmlBody))))
-			msg.WriteString("\r\n")
-			msg.WriteString("--" + alt + "--\r\n")
+			// With inline images (cid: refs from a forwarded HTML body) the
+			// alternative lives inside a multipart/related whose extra parts
+			// carry the images under their original Content-IDs.
+			writeAlternative := func(enc string) {
+				alt := "boi-alt-" + randHex(16)
+				msg.WriteString("--" + enc + "\r\n")
+				msg.WriteString(`Content-Type: multipart/alternative; boundary="` + alt + "\"\r\n\r\n")
+				msg.WriteString("--" + alt + "\r\n")
+				msg.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+				msg.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+				msg.WriteString(normalizeCRLF(body))
+				msg.WriteString("\r\n")
+				msg.WriteString("--" + alt + "\r\n")
+				msg.WriteString("Content-Type: text/html; charset=utf-8\r\n")
+				// base64: forwarded HTML can carry arbitrarily long lines, which
+				// breaks SMTP's 998-octet limit.
+				msg.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+				msg.WriteString(base64Wrapped([]byte(normalizeCRLF(htmlBody))))
+				msg.WriteString("\r\n")
+				msg.WriteString("--" + alt + "--\r\n")
+			}
+			if len(inlineAtts) > 0 {
+				rel := "boi-rel-" + randHex(16)
+				msg.WriteString("--" + boundary + "\r\n")
+				msg.WriteString(`Content-Type: multipart/related; boundary="` + rel + "\"\r\n\r\n")
+				writeAlternative(rel)
+				for _, att := range inlineAtts {
+					mime := att.MIME
+					if mime == "" {
+						mime = "image/png"
+					}
+					fname := mimeEscape(att.Filename)
+					msg.WriteString("--" + rel + "\r\n")
+					msg.WriteString(fmt.Sprintf("Content-Type: %s; name=\"%s\"\r\n", mime, fname))
+					msg.WriteString("Content-Transfer-Encoding: base64\r\n")
+					msg.WriteString(fmt.Sprintf("Content-ID: <%s>\r\n", att.ContentID))
+					msg.WriteString(fmt.Sprintf("Content-Disposition: inline; filename=\"%s\"\r\n\r\n", fname))
+					msg.WriteString(base64Wrapped(att.Data))
+					msg.WriteString("\r\n")
+				}
+				msg.WriteString("--" + rel + "--\r\n")
+			} else {
+				writeAlternative(boundary)
+			}
 		}
 		// Attachment parts — base64 at the RFC 2045 line length.
 		for _, att := range atts {
+			if att.Inline {
+				continue // already emitted inside multipart/related
+			}
 			mime := att.MIME
 			if mime == "" {
 				mime = "application/octet-stream"
