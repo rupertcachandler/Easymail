@@ -787,7 +787,32 @@ func (s *Store) ListEmails(accountID, folderID string, offset, limit int) ([]*mo
 		return nil, err
 	}
 	defer rows.Close()
-	return s.scanEmails(rows)
+	emails, err := s.scanEmails(rows)
+	if err != nil {
+		return nil, err
+	}
+	// List responses must stay small: the Android bridge round-trips the whole
+	// JSON payload through a JS string, and 10k full HTML bodies OOMs the app.
+	// Bodies are fetched per-message via GetEmailBody when opened.
+	for _, e := range emails {
+		e.Body = ""
+	}
+	return emails, nil
+}
+
+// GetEmailBody returns body and body_type for a single email, for the reader
+// pane (list responses carry preview only).
+func (s *Store) GetEmailBody(accountID, emailID string) (*models.Email, error) {
+	var e models.Email
+	err := s.handle().QueryRow(`SELECT body, body_type FROM emails
+		WHERE account_id = ? AND id = ?`, accountID, emailID).
+		Scan(&e.Body, &e.BodyType)
+	if err != nil {
+		return nil, err
+	}
+	e.ID = emailID
+	e.AccountID = accountID
+	return &e, nil
 }
 
 func (s *Store) ListEmailsByContact(accountID, contactEmail string, offset, limit int) ([]*models.Email, error) {
@@ -801,7 +826,14 @@ func (s *Store) ListEmailsByContact(accountID, contactEmail string, offset, limi
 		return nil, err
 	}
 	defer rows.Close()
-	return s.scanEmails(rows)
+	emails, err := s.scanEmails(rows)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range emails {
+		e.Body = ""
+	}
+	return emails, nil
 }
 
 func (s *Store) scanEmails(rows *sql.Rows) ([]*models.Email, error) {

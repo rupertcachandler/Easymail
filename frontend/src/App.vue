@@ -8,7 +8,8 @@ const WailsFullscreen = () => WailsWindow.Fullscreen()
 const WailsUnfullscreen = () => WailsWindow.UnFullscreen()
 
 function isWailsNative(): boolean {
-  return !!(window as any).go?.app?.App || !!(window as any).runtime
+  // v2 exposed window.go/window.runtime; v3 exposes window._wails
+  return !!(window as any).go?.app?.App || !!(window as any).runtime || !!(window as any)._wails
 }
 
 const wails = {
@@ -935,7 +936,22 @@ async function syncAllLocked() {
 }
 
 function selectPerson(email: string) { selectedPerson.value = email; selectedEmail.value = null; selectedEmailIds.value = []; moveMenuOpen.value = false }
-function selectEmail(email: Email) { selectedEmail.value = email }
+async function selectEmail(email: Email) {
+  selectedEmail.value = email
+  // List responses carry preview only (full bodies OOM the Android bridge);
+  // fetch the body lazily when the message is opened.
+  if (!email.body) {
+    try {
+      const b = await wails.call('GetEmailBody', selectedAccount.value, email.id)
+      if (b && selectedEmail.value === email) {
+        email.body = b.body || ''
+        if (b.bodyType) email.bodyType = b.bodyType
+      }
+    } catch (err) {
+      console.error('GetEmailBody failed', err)
+    }
+  }
+}
 function backToPeople() { selectedPerson.value = null; selectedEmail.value = null; selectedEmailIds.value = [] }
 function backToConversation() { selectedEmail.value = null; moveMenuOpen.value = false }
 
@@ -1872,10 +1888,10 @@ watch(selectedAccount, async () => {
       <div class="setup-logo"><img src="/boi-icon.png" alt="BOI" /></div>
       <p class="muted">Connect your email account to get started</p>
       <div v-if="addAccountError" class="error-banner">{{ addAccountError }}</div>
-      <div class="form-group"><label>Your Name</label><input v-model="newAccountName" placeholder="Rupert Chandler" /></div>
-      <div class="form-group"><label>Email</label><input v-model="newAccountEmail" placeholder="you@example.com" /></div>
-      <div class="form-group"><label>Password</label><input type="password" v-model="newAccountPassword" placeholder="App password" /></div>
-      <div class="form-group"><label>Server</label><input v-model="newAccountServer" /></div>
+      <div class="form-group"><label>Your Name</label><input v-model="newAccountName" placeholder="Rupert Chandler" autocapitalize="words" /></div>
+      <div class="form-group"><label>Email</label><input v-model="newAccountEmail" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="you@example.com" /></div>
+      <div class="form-group"><label>Password</label><input type="password" v-model="newAccountPassword" autocomplete="off" spellcheck="false" placeholder="App password" /></div>
+      <div class="form-group"><label>Server</label><input v-model="newAccountServer" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>
       <button class="primary-btn" @click="addAccount" :disabled="addingAccount" style="width:100%">{{ addingAccount ? 'Connecting...' : 'Add Account' }}</button>
     </div>
   </div>
@@ -2455,9 +2471,9 @@ watch(selectedAccount, async () => {
             <div class="form-group"><label>Name</label>
               <input v-model="newAccountName" placeholder="Your name (e.g. Rupert Chandler)" />
             </div>
-            <div class="form-group"><label>Email</label><input v-model="newAccountEmail" placeholder="you@example.com" /></div>
-            <div class="form-group"><label>Password</label><input type="password" v-model="newAccountPassword" :placeholder="editingAccountId ? 'Leave blank to keep current' : 'App password'" /></div>
-            <div class="form-group"><label>Server</label><input v-model="newAccountServer" /></div>
+            <div class="form-group"><label>Email</label><input v-model="newAccountEmail" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="you@example.com" /></div>
+            <div class="form-group"><label>Password</label><input type="password" v-model="newAccountPassword" autocomplete="off" spellcheck="false" :placeholder="editingAccountId ? 'Leave blank to keep current' : 'App password'" /></div>
+            <div class="form-group"><label>Server</label><input v-model="newAccountServer" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>
             <div class="modal-actions" style="justify-content:flex-start">
               <button class="primary-btn" @click="saveAccount" :disabled="addingAccount">{{ addingAccount ? 'Saving...' : (editingAccountId ? 'Save Changes' : 'Add Account') }}</button>
               <button class="action-btn muted" v-if="editingAccountId" @click="startNewAccount()">Cancel Edit</button>

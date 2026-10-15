@@ -85,6 +85,18 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // Edge-to-edge is forced on Android 15+ (targetSdk 35): the window draws
+        // under the status/navigation bars. Pad the container by the system-bar
+        // + cutout insets so the WebView content clears the clock/battery area.
+        android.view.View container = findViewById(R.id.main_container);
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(container, (v, windowInsets) -> {
+            androidx.core.graphics.Insets bars = windowInsets.getInsets(
+                    androidx.core.view.WindowInsetsCompat.Type.systemBars()
+                            | androidx.core.view.WindowInsetsCompat.Type.displayCutout());
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return androidx.core.view.WindowInsetsCompat.CONSUMED;
+        });
+
         // Initialize the native Go library
         bridge = new WailsBridge(this);
         bridge.initialize();

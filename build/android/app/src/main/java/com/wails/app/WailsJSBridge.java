@@ -119,33 +119,39 @@ public class WailsJSBridge {
      * Send a callback response to JavaScript
      */
     private void sendCallback(String callbackId, String result, String error) {
-        final String js;
+        // Built with StringBuilder, not String.format: a large result (e.g. a
+        // big mail list) used to be copied once by format and once per
+        // replace() in escapeJsString, which OOMed the app on first full sync.
+        StringBuilder sb = new StringBuilder(64);
+        sb.append("window._wailsAndroidCallback && window._wailsAndroidCallback('")
+                .append(escapeJsString(callbackId)).append("', ");
         if (error != null) {
-            js = String.format(
-                    "window._wailsAndroidCallback && window._wailsAndroidCallback('%s', null, '%s');",
-                    escapeJsString(callbackId),
-                    escapeJsString(error)
-            );
+            sb.append("null, '").append(escapeJsString(error)).append("')");
         } else {
-            js = String.format(
-                    "window._wailsAndroidCallback && window._wailsAndroidCallback('%s', '%s', null);",
-                    escapeJsString(callbackId),
-                    escapeJsString(result != null ? result : "")
-            );
+            sb.append('\'').append(escapeJsString(result != null ? result : "")).append("', null)");
         }
-
+        final String js = sb.toString();
         webView.post(() -> webView.evaluateJavascript(js, null));
     }
 
+    // Single-pass escape: the old chained .replace() calls copied the string
+    // once per replacement, multiplying peak memory for large payloads.
     private String escapeJsString(String str) {
         if (str == null) return "";
-        return str.replace("\\", "\\\\")
-                .replace("'", "\\'")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                // JS line terminators (U+2028/U+2029) must be escaped too; built via
-                // (char) casts so the Java lexer does not reinterpret them as newlines.
-                .replace(String.valueOf((char) 0x2028), "\\u2028")
-                .replace(String.valueOf((char) 0x2029), "\\u2029");
+        StringBuilder sb = new StringBuilder(str.length() + 16);
+        for (int i = 0; i < str.length(); i++) {
+            char c = str.charAt(i);
+            switch (c) {
+                case '\\': sb.append("\\\\"); break;
+                case '\'': sb.append("\\'"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                // JS line terminators (U+2028/U+2029) must be escaped too.
+                case 0x2028: sb.append("\\u2028"); break;
+                case 0x2029: sb.append("\\u2029"); break;
+                default: sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 }

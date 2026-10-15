@@ -38,9 +38,6 @@ export function AIValidateKey(apiKey: string, baseURL: string): $CancellableProm
     return $Call.ByID(2477553768, apiKey, baseURL);
 }
 
-/**
- * AddAccount adds a new email account
- */
 export function AddAccount(name: string, email: string, password: string, serverURL: string): $CancellablePromise<models$0.Account | null> {
     return $Call.ByID(2246505563, name, email, password, serverURL);
 }
@@ -149,6 +146,14 @@ export function GetCalendarEvents(accountID: string, folderID: string): $Cancell
  */
 export function GetContacts(accountID: string): $CancellablePromise<(models$0.Contact | null)[] | null> {
     return $Call.ByID(1476693894, accountID);
+}
+
+/**
+ * GetEmailBody returns body and body_type for a single email (lists carry
+ * preview only to keep bridge payloads small).
+ */
+export function GetEmailBody(accountID: string, emailID: string): $CancellablePromise<models$0.Email | null> {
+    return $Call.ByID(217932821, accountID, emailID);
 }
 
 /**

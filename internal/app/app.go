@@ -65,7 +65,7 @@ type App struct {
 
 // New creates a new App instance
 func New() (*App, error) {
-	configDir, err := os.UserConfigDir()
+	configDir, err := dataDir()
 	if err != nil {
 		return nil, fmt.Errorf("cannot find config dir: %w", err)
 	}
@@ -75,6 +75,9 @@ func New() (*App, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
 		return nil, fmt.Errorf("cannot create config dir %s: %w", filepath.Dir(dbPath), err)
 	}
+	// Mobile: remember last-good server IPs so syncs survive DNS blips
+	// (phone doze / VPN sleep make lookups fail intermittently).
+	activesync.SetDNSCachePath(filepath.Join(filepath.Dir(dbPath), "dns-cache.json"))
 
 	// Remove stale WAL/SHM files from previous runs
 	os.Remove(dbPath + "-wal")
@@ -344,7 +347,35 @@ func (a *App) GetActivityLog(limit int) ([]string, error) {
 // === Account Management ===
 
 // AddAccount adds a new email account
+// sanitizeServerURL cleans up a user-typed EAS endpoint URL. Mobile keyboards
+// routinely autocorrect '.' to ',' in hostnames and drop the scheme; both
+// break DNS at first connect with a confusing "no such host". Trim, default
+// the scheme to https, and fix comma typos in the host portion.
+func sanitizeServerURL(raw string) string {
+	s := strings.TrimSpace(raw)
+	s = strings.ReplaceAll(s, " ", "")
+	if s == "" {
+		return s
+	}
+	rest := s
+	i := strings.Index(s, "://")
+	if i >= 0 {
+		rest = s[i+3:]
+	} else {
+		rest = s
+		s = "https://" + s
+	}
+	// Host runs to the first '/'; EAS hostnames never contain commas.
+	if j := strings.Index(rest, "/"); j >= 0 {
+		s = s[:len(s)-len(rest)] + strings.ReplaceAll(rest[:j], ",", ".") + rest[j:]
+	} else {
+		s = s[:len(s)-len(rest)] + strings.ReplaceAll(rest, ",", ".")
+	}
+	return s
+}
+
 func (a *App) AddAccount(name, email, password, serverURL string) (*models.Account, error) {
+	serverURL = sanitizeServerURL(serverURL)
 	log.Printf("AddAccount called: name=%q email=%q server=%q", name, email, serverURL)
 	acc := &models.Account{
 		Name:       name,
@@ -371,6 +402,7 @@ func (a *App) AddAccount(name, email, password, serverURL string) (*models.Accou
 // UpdateAccount edits an existing account (name/email/password/serverURL),
 // preserving its ID and device identity, then reconnects.
 func (a *App) UpdateAccount(id, name, email, password, serverURL string) (*models.Account, error) {
+	serverURL = sanitizeServerURL(serverURL)
 	log.Printf("UpdateAccount called: id=%q email=%q server=%q", id, email, serverURL)
 	accounts, err := a.store.ListAccounts()
 	if err != nil {
@@ -469,6 +501,12 @@ func (a *App) GetEmails(accountID, folderID string, offset, limit int) ([]*model
 	result, err := a.store.ListEmails(accountID, folderID, offset, limit)
 	log.Printf("GetEmails: returned %d emails", len(result))
 	return result, err
+}
+
+// GetEmailBody returns body and body_type for a single email (lists carry
+// preview only to keep bridge payloads small).
+func (a *App) GetEmailBody(accountID, emailID string) (*models.Email, error) {
+	return a.store.GetEmailBody(accountID, emailID)
 }
 
 // GetEmailsByContact returns all emails exchanged with a contact

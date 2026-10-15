@@ -84,6 +84,9 @@ func (c *Client) Connect(ctx context.Context) error {
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			// Mobile-resilient dialing: DNS on phones fails intermittently
+			// (doze/VPN sleep); fall back to the last-known-good IP.
+			DialContext: dialContext,
 		},
 		// Without a timeout a hung SOGo sync (stale collection lock from a
 		// previous killed instance, dead keep-alive, etc.) blocks forever with
