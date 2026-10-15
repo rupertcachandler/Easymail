@@ -527,7 +527,7 @@ async function deleteAccount(a: any) {
 }
 
 // === UNIBOX: People-centric grouping (sent + received merged) ===
-interface PersonInfo { email: string; name: string; lastDate: Date; count: number; hasUnread: boolean }
+interface PersonInfo { email: string; name: string; lastDate: Date; count: number; hasUnread: boolean; attCount: number }
 
 const myEmail = computed(() => {
   const acc = accounts.value.find(a => a.id === selectedAccount.value)
@@ -576,11 +576,12 @@ const peopleGroups = computed(() => {
     const name = otherPersonName(e)
     const existing = byPerson.get(key)
     if (!existing) {
-      byPerson.set(key, { email: key, name, lastDate: d, count: 1, hasUnread: !e.isRead })
+      byPerson.set(key, { email: key, name, lastDate: d, count: 1, hasUnread: !e.isRead, attCount: e.hasAttachment ? 1 : 0 })
     } else {
       existing.count++
       if (d > existing.lastDate) existing.lastDate = d
       if (!e.isRead) existing.hasUnread = true
+      if (e.hasAttachment) existing.attCount++
     }
   }
   return Array.from(byPerson.values()).sort((a, b) => b.lastDate.getTime() - a.lastDate.getTime())
@@ -1853,6 +1854,7 @@ watch(selectedAccount, async () => {
                 <span class="sender-sub">{{ s.email }}</span>
               </div>
               <div class="sender-right">
+                <span v-if="s.attCount" class="att-clip" :title="s.attCount + ' mail' + (s.attCount > 1 ? 's' : '') + ' with attachments'">📎{{ s.attCount > 1 ? s.attCount : '' }}</span>
                 <span v-if="s.hasUnread" class="dot"></span>
                 <span class="sender-ct">{{ s.count }}</span>
               </div>
@@ -1868,6 +1870,7 @@ watch(selectedAccount, async () => {
               <span class="sender-sub">{{ s.email }}</span>
             </div>
             <div class="sender-right">
+              <span v-if="s.attCount" class="att-clip" :title="s.attCount + ' mail' + (s.attCount > 1 ? 's' : '') + ' with attachments'">📎{{ s.attCount > 1 ? s.attCount : '' }}</span>
               <span v-if="s.hasUnread" class="dot"></span>
               <span class="sender-ct">{{ s.count }}</span>
             </div>
