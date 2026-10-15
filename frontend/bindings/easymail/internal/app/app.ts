@@ -119,7 +119,8 @@ export function ForwardEmail(accountID: string, emailID: string, to: string, cc:
 }
 
 /**
- * GetAIConfig returns the stored AI provider settings (empty = not set up).
+ * GetAIConfig returns the stored AI provider settings, falling back to the
+ * baked-in defaults when nothing has been saved yet.
  */
 export function GetAIConfig(): $CancellablePromise<models$0.AIConfig | null> {
     return $Call.ByID(1307188531);

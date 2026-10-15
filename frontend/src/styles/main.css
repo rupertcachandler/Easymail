@@ -674,8 +674,13 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
    pane — full-height people list until a person is tapped, then the
    conversation replaces it (the conv header already has a back button). */
 @media (max-width: 700px) {
-  .app { flex-direction: column; }
+  .app { flex-direction: column; height: 100vh; height: 100dvh; }
+  /* list-mode: .left must be a bounded flex item that FORCES itself to fill
+     the viewport — flex-basis 0 (not auto), or .sender-scroll's overflow-y
+     never engages and the list can't scroll on the phone. */
   .app.list-mode .right { display: none; }
-  .app.read-mode .left { display: none; width: 100%; min-width: 0; }
-  .app.read-mode .right { flex: 1; }
+  .app.list-mode .left { flex: 1 1 0 !important; min-height: 0 !important; height: auto; width: 100%; min-width: 0; border-right: none; }
+  .app.list-mode .sender-scroll { flex: 1 1 0 !important; min-height: 0 !important; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .app.read-mode .left { display: none; }
+  .app.read-mode .right { flex: 1 1 0 !important; min-height: 0 !important; }
 }

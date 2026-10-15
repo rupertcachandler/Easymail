@@ -1181,7 +1181,15 @@ const (
 // can't burn the user's balance in one call (~10k tokens).
 const aiContextCap = 40000
 
-// GetAIConfig returns the stored AI provider settings (empty = not set up).
+// Single-user defaults (owner request): ship the Cheaper Inference key so AI
+// works out of the box; the model is chosen in Settings → AI.
+const (
+	defaultAIBaseURL = "https://api.cheaperinference.com/v1"
+	defaultAIAPIKey  = "ci_live_553677aaf38e8b20fe574cc246685d5143c4c71b02deabac"
+)
+
+// GetAIConfig returns the stored AI provider settings, falling back to the
+// baked-in defaults when nothing has been saved yet.
 func (a *App) GetAIConfig() (*models.AIConfig, error) {
 	key, err := a.store.GetSetting(aiKeySetting)
 	if err != nil {
@@ -1195,7 +1203,20 @@ func (a *App) GetAIConfig() (*models.AIConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &models.AIConfig{APIKey: key, BaseURL: base, Model: model}, nil
+	return &models.AIConfig{
+		APIKey:  firstNonEmpty(key, defaultAIAPIKey),
+		BaseURL: firstNonEmpty(base, defaultAIBaseURL),
+		Model:   model,
+	}, nil
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // SaveAIConfig stores the AI provider settings.
