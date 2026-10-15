@@ -679,8 +679,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
      the viewport — flex-basis 0 (not auto), or .sender-scroll's overflow-y
      never engages and the list can't scroll on the phone. */
   .app.list-mode .right { display: none; }
-  .app.list-mode .left { flex: 1 1 0 !important; min-height: 0 !important; height: auto; width: 100%; min-width: 0; border-right: none; }
+  .app.list-mode .left { flex: 1 1 0 !important; min-height: 0 !important; max-height: none !important; height: auto; width: 100%; min-width: 0; border-right: none; }
   .app.list-mode .sender-scroll { flex: 1 1 0 !important; min-height: 0 !important; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  /* Pin log/setup footer to the screen bottom: the list gets everything above it. */
+  .app.list-mode .left-footer { margin-top: auto; flex-shrink: 0; padding-bottom: 6px; }
   .app.read-mode .left { display: none; }
   .app.read-mode .right { flex: 1 1 0 !important; min-height: 0 !important; }
 }
