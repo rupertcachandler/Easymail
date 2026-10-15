@@ -1897,7 +1897,7 @@ watch(selectedAccount, async () => {
   </div>
 
   <!-- ===== MAIN APP: UNIBOX PEOPLE-CENTRIC ===== -->
-  <div class="app" v-else>
+  <div class="app" v-else :class="{ 'read-mode': !!selectedPerson, 'list-mode': !selectedPerson }">
     <!-- Soft per-account window tint (user 1 green, user 2 blue, user 3 purple, …).
          Purely decorative: pointer-events none so it never blocks clicks. -->
     <div class="account-tint" :style="{ background: accountTint }" :key="selectedAccount"></div>

@@ -667,3 +667,15 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 /* Setup screen logo */
 .setup-logo { display: flex; justify-content: center; margin-bottom: 6px; }
 .setup-logo img { width: 80px; height: 80px; border-radius: 20px; box-shadow: 0 0 24px var(--accent); }
+
+/* ===== Mobile (phone portrait) =====
+   Two-pane desktop layout doesn't fit a phone: .left (300px) + .right wrap
+   and the welcome pane eats half the screen. On narrow screens go single
+   pane — full-height people list until a person is tapped, then the
+   conversation replaces it (the conv header already has a back button). */
+@media (max-width: 700px) {
+  .app { flex-direction: column; }
+  .app.list-mode .right { display: none; }
+  .app.read-mode .left { display: none; width: 100%; min-width: 0; }
+  .app.read-mode .right { flex: 1; }
+}
