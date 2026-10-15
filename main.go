@@ -3,10 +3,7 @@ package main
 import (
 	"embed"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"easymail/internal/app"
 )
@@ -14,6 +11,8 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// Window icons etc. in v3 come from build/config.yml + the Taskfile asset
+// pipeline; this PNG stays for packaging use.
 //go:embed frontend/public/boi-icon.png
 var appIcon []byte
 
@@ -25,35 +24,28 @@ func main() {
 	}
 	defer easymail.Shutdown()
 
-	err = wails.Run(&options.App{
-		Title:         "BOI",
-		Width:         1200,
-		Height:        800,
-		MinWidth:      900,
-		MinHeight:     600,
-		AssetServer:   &assetserver.Options{
-			Assets: assets,
+	wailsApp := application.New(application.Options{
+		Name:        "BOI",
+		Description: "Easymail — BOI",
+		Services: []application.Service{
+			application.NewService(easymail),
 		},
-		OnStartup:     easymail.Startup,
-		OnShutdown:    easymail.OnShutdown,
-		OnBeforeClose: easymail.OnBeforeClose,
-		Bind: []interface{}{
-			easymail,
-		},
-		Linux: &linux.Options{
-			Icon:                appIcon,
-			WindowIsTranslucent: false,
-			WebviewGpuPolicy:   linux.WebviewGpuPolicyAlways,
-			// Window identity must match StartupWMClass in packaging/boi.desktop,
-			// otherwise GNOME (especially on Wayland, where gtk_window_set_icon
-			// is discarded) shows a generic icon for the running window instead
-			// of the BOI bolt, and the launcher never shows a running indicator.
-			// "boi" = desktop file = installed binary name. Consistent trio.
-			ProgramName:         "boi",
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
 		},
 	})
 
-	if err != nil {
+	wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:            "BOI",
+		Width:            1200,
+		Height:           800,
+		MinWidth:         900,
+		MinHeight:        600,
+		BackgroundColour: application.NewRGB(6, 7, 15),
+		URL:              "/",
+	})
+
+	if err := wailsApp.Run(); err != nil {
 		println("Error:", err.Error())
 	}
 }

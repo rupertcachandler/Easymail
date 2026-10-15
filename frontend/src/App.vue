@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import * as AppBinding from '../wailsjs/go/app/App'
-import { EventsOn as WailsEventsOn, WindowFullscreen as WailsFullscreen, WindowUnfullscreen as WailsUnfullscreen } from '../wailsjs/runtime/runtime'
+import * as AppBinding from '../bindings/easymail/internal/app/app'
+import { Events as WailsEvents, Window as WailsWindow } from '@wailsio/runtime'
+// v2→v3 shims: keep the call-site names unchanged.
+const WailsEventsOn = WailsEvents.On
+const WailsFullscreen = () => WailsWindow.Fullscreen()
+const WailsUnfullscreen = () => WailsWindow.UnFullscreen()
 
 function isWailsNative(): boolean {
   return !!(window as any).go?.app?.App || !!(window as any).runtime

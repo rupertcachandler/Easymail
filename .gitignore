@@ -31,5 +31,14 @@ Thumbs.db
 .env
 
 # Compiled binary + Wails-generated artifacts
-/build/
 frontend/package.json.md5
+
+# Wails v3
+/bin/
+/.task/
+/build/bin/
+/build/.task/
+/build/android/app/build/
+/build/android/.gradle/
+/build/android/app/src/main/jniLibs/
+/build/android/build/

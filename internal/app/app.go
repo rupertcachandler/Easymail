@@ -21,7 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"easymail/internal/activesync"
 	"easymail/internal/ai"
@@ -214,6 +214,33 @@ func (a *App) selfHeal(trigger string) {
 	a.logActivity("DB self-heal complete via " + how + " — resyncing from server")
 }
 
+// emitEvent publishes a UI event on the v3 application event bus. Safe to
+// call at any time — a no-op before the application instance exists (e.g.
+// during startup sync races).
+func (a *App) emitEvent(name string, data ...any) {
+	if w := application.Get(); w != nil {
+		w.Event.Emit(name, data...)
+	}
+}
+
+// saveFileDialog asks the user where to save a file. v3 builder API;
+// returning an empty string (with nil error) means the user cancelled,
+// which callers treat as a clean skip.
+func (a *App) saveFileDialog(title, directory, filename string) (string, error) {
+	w := application.Get()
+	if w == nil {
+		return "", fmt.Errorf("app not running")
+	}
+	d := w.Dialog.SaveFile()
+	d.SetOptions(&application.SaveFileDialogOptions{
+		Title:                title,
+		Directory:            directory,
+		Filename:             filename,
+		CanCreateDirectories: true,
+	})
+	return d.PromptForSingleSelection()
+}
+
 // Startup is called when the app starts
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
@@ -235,14 +262,18 @@ func (a *App) Startup(ctx context.Context) {
 	go a.startMailPolling()
 }
 
-// OnShutdown is called when the app is shutting down
-func (a *App) OnShutdown(ctx context.Context) {
-	log.Println("BOI shutting down")
+// ServiceStartup implements the Wails v3 service lifecycle (was v2's
+// OnStartup hook).
+func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	a.Startup(ctx)
+	return nil
 }
 
-// OnBeforeClose asks the user before closing
-func (a *App) OnBeforeClose(ctx context.Context) bool {
-	return false
+// ServiceShutdown implements the Wails v3 service lifecycle (was v2's
+// OnShutdown hook).
+func (a *App) ServiceShutdown() {
+	log.Println("BOI shutting down")
+	a.Shutdown()
 }
 
 // Shutdown is called on exit
@@ -426,7 +457,7 @@ func (a *App) SyncFolders(accountID string) error {
 			log.Printf("Warning: cannot save folder %s: %v", f.ServerID, err)
 		}
 	}
-	runtime.EventsEmit(a.ctx, "folders-updated", accountID)
+	a.emitEvent("folders-updated", accountID)
 	return nil
 }
 
@@ -488,7 +519,7 @@ func (a *App) SyncEmails(accountID, serverID string) error {
 	}
 	log.Printf("SyncEmails: filter=%d got %d emails (%d deleted) for folder %s", filter, len(emails), len(deletedIDs), serverID)
 	a.applySyncResults(accountID, serverID, "manual", emails, deletedIDs)
-	runtime.EventsEmit(a.ctx, "emails-updated", accountID, serverID)
+	a.emitEvent("emails-updated", accountID, serverID)
 	return nil
 }
 
@@ -628,12 +659,7 @@ func (a *App) DownloadAttachment(accountID, fileReference, suggestedName string)
 	// Ask the user where to save — native save dialog. Returning an empty
 	// string means the user cancelled, which we treat as a clean "skip"
 	// (empty path, nil error) rather than a failure.
-	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:                "Save attachment",
-		DefaultDirectory:     defaultDir,
-		DefaultFilename:      filename,
-		CanCreateDirectories: true,
-	})
+	path, err := a.saveFileDialog("Save attachment", defaultDir, filename)
 	if err != nil {
 		return "", fmt.Errorf("save dialog: %w", err)
 	}
@@ -675,12 +701,7 @@ func (a *App) SaveHTMLAs(content, suggestedName string) (string, error) {
 		home = "."
 	}
 	defaultDir := filepath.Join(home, "Downloads")
-	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:                "Save message source",
-		DefaultDirectory:     defaultDir,
-		DefaultFilename:      filename,
-		CanCreateDirectories: true,
-	})
+	path, err := a.saveFileDialog("Save message source", defaultDir, filename)
 	if err != nil {
 		return "", fmt.Errorf("save dialog: %w", err)
 	}
@@ -770,7 +791,7 @@ func (a *App) SyncContacts(accountID, serverID string) error {
 			log.Printf("Warning: cannot save contact %s: %v", c.ID, err)
 		}
 	}
-	runtime.EventsEmit(a.ctx, "contacts-updated", accountID)
+	a.emitEvent("contacts-updated", accountID)
 	return nil
 }
 
@@ -800,7 +821,7 @@ func (a *App) SyncCalendar(accountID, serverID string) error {
 		log.Printf("SyncCalendar: reconcile failed for %s: %v", serverID, err)
 		return fmt.Errorf("calendar reconcile failed: %w", err)
 	}
-	runtime.EventsEmit(a.ctx, "calendar-updated", accountID)
+	a.emitEvent("calendar-updated", accountID)
 	return nil
 }
 
@@ -826,7 +847,7 @@ func (a *App) CreateCalendarEvent(accountID, serverID string, ev *models.Calenda
 		log.Printf("Warning: cannot save created calendar event: %v", err)
 	}
 	log.Printf("CreateCalendarEvent: created %s (%q)", newID, ev.Subject)
-	runtime.EventsEmit(a.ctx, "calendar-updated", accountID)
+	a.emitEvent("calendar-updated", accountID)
 	return newID, nil
 }
 
@@ -879,7 +900,7 @@ func (a *App) UpdateCalendarEvent(accountID, serverID, eventID, oldServerID stri
 		log.Printf("Warning: cannot save updated calendar event: %v", err)
 	}
 	log.Printf("UpdateCalendarEvent: updated %s -> %s (%q)", target, newID, evv.Subject)
-	runtime.EventsEmit(a.ctx, "calendar-updated", accountID)
+	a.emitEvent("calendar-updated", accountID)
 	return newID, nil
 }
 
@@ -912,7 +933,7 @@ func (a *App) DeleteCalendarEvent(accountID, serverID, eventID, eventServerID st
 		}
 	}
 	log.Printf("DeleteCalendarEvent: deleted %s", eventServerID)
-	runtime.EventsEmit(a.ctx, "calendar-updated", accountID)
+	a.emitEvent("calendar-updated", accountID)
 	return nil
 }
 
@@ -958,8 +979,8 @@ func (a *App) MoveEmails(accountID string, moves []struct {
 			log.Printf("MoveEmails: local delete of %s failed: %v", m.ServerID, err)
 		}
 	}
-	runtime.EventsEmit(a.ctx, "emails-updated", accountID, "")
-	runtime.EventsEmit(a.ctx, "folders-updated", accountID)
+	a.emitEvent("emails-updated", accountID, "")
+	a.emitEvent("folders-updated", accountID)
 	log.Printf("MoveEmails: moved %d email(s) to folder %s", len(moves), moves[0].DstFolderID)
 	return nil
 }
@@ -993,8 +1014,8 @@ func (a *App) CopyEmails(accountID string, copies []struct {
 		return err
 	}
 	// Refresh the destination so the copies show up without a manual sync.
-	runtime.EventsEmit(a.ctx, "folders-updated", accountID)
-	runtime.EventsEmit(a.ctx, "emails-updated", accountID, "")
+	a.emitEvent("folders-updated", accountID)
+	a.emitEvent("emails-updated", accountID, "")
 	log.Printf("CopyEmails: copied %d email(s) to folder", len(copies))
 	return nil
 }
@@ -1031,7 +1052,7 @@ func (a *App) CreateMailFolder(accountID, displayName, parentServerId string) (s
 	if err := a.store.SaveFolder(f); err != nil {
 		log.Printf("CreateMailFolder: local save failed (folder will appear on next sync): %v", err)
 	}
-	runtime.EventsEmit(a.ctx, "folders-updated", accountID)
+	a.emitEvent("folders-updated", accountID)
 	log.Printf("CreateMailFolder: created %q under %q serverId=%s", displayName, parentServerId, serverID)
 	return serverID, nil
 }
@@ -1085,7 +1106,7 @@ func (a *App) DeleteEmails(accountID string, items []struct {
 			log.Printf("DeleteEmails: local delete of %s failed: %v", it.ServerID, err)
 		}
 	}
-	runtime.EventsEmit(a.ctx, "emails-updated", accountID, "")
+	a.emitEvent("emails-updated", accountID, "")
 	log.Printf("DeleteEmails: deleted %d email(s)", len(items))
 	return nil
 }
@@ -1343,7 +1364,9 @@ func (a *App) ForwardEmail(accountID, emailID, to, cc, bcc, subject, body string
 // with attachments it emits multipart/mixed (body part + base64 parts).
 // OpenExternal opens a URL in the system browser.
 func (a *App) OpenExternal(url string) {
-	runtime.BrowserOpenURL(a.ctx, url)
+	if w := application.Get(); w != nil {
+		_ = w.Browser.OpenURL(url)
+	}
 }
 
 // OpenAttachment fetches the attachment and opens it with the system's
@@ -1717,14 +1740,14 @@ func (a *App) connectAccount(acc *models.Account) {
 	client, err := activesync.NewClient(acc)
 	if err != nil {
 		log.Printf("connectAccount: failed to create client for %s: %v", acc.Email, err)
-		runtime.EventsEmit(a.ctx, "account-error", acc.ID, err.Error())
+		a.emitEvent("account-error", acc.ID, err.Error())
 		return
 	}
 	if err := client.Connect(a.ctx); err != nil {
 		log.Printf("connectAccount: failed to connect %s: %v", acc.Email, err)
 		acc.Connected = false
 		a.store.SaveAccount(acc)
-		runtime.EventsEmit(a.ctx, "account-error", acc.ID, err.Error())
+		a.emitEvent("account-error", acc.ID, err.Error())
 		return
 	}
 	acc.Connected = true
@@ -1740,7 +1763,7 @@ func (a *App) connectAccount(acc *models.Account) {
 	if err := a.store.PurgeOwnAddress(acc.ID); err != nil {
 		log.Printf("connectAccount: purge own address failed: %v", err)
 	}
-	runtime.EventsEmit(a.ctx, "account-connected", acc.ID)
+	a.emitEvent("account-connected", acc.ID)
 	log.Printf("connectAccount: connected %s successfully", acc.Email)
 }
 
@@ -1863,7 +1886,7 @@ func (a *App) pollMailOnce() {
 				// (bodies included) on a 60s cadence even when nothing arrived —
 				// a sustained freeze on the UI thread (calendar open/close would
 				// stall for seconds while a reload landed).
-				runtime.EventsEmit(a.ctx, "emails-updated", accountID, f.ServerID)
+				a.emitEvent("emails-updated", accountID, f.ServerID)
 			}
 			synced++
 		}
@@ -1897,7 +1920,7 @@ func (a *App) runReconcileOnce() {
 				continue
 			}
 			a.applySyncResults(accountID, f.ServerID, "backfill", emails, deletedIDs)
-			runtime.EventsEmit(a.ctx, "emails-updated", accountID, f.ServerID)
+			a.emitEvent("emails-updated", accountID, f.ServerID)
 		}
 	}
 	log.Println("runReconcileOnce: reconcile finished")

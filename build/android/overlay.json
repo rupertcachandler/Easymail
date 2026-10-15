@@ -1,0 +1,5 @@
+{
+  "Replace": {
+    "/opt/easymail/main_android.gen.go": "/opt/easymail/build/android/gen/main_android.gen.go"
+  }
+}
