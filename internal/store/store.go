@@ -403,6 +403,11 @@ func (s *Store) migrateOn(db *sql.DB) error {
 			PRIMARY KEY (account_id, collection_id),
 			FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 		)`,
+		// App-level key/value config (AI provider credentials etc.).
+		`CREATE TABLE IF NOT EXISTS settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)`,
 		// Indexes for performance
 	}
 	for _, m := range createTables {
@@ -1117,6 +1122,23 @@ func (s *Store) DeleteCalendarEvent(id string) error {
 // GetSyncKey returns the persisted ActiveSync SyncKey for a collection, or
 // "" if none is stored (first sync). With no stored key, callers fall back
 // to "0" and do a full initial sync.
+// GetSetting returns an app-level setting value ('' if unset).
+func (s *Store) GetSetting(key string) (string, error) {
+	var v string
+	err := s.handle().QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return v, err
+}
+
+// SetSetting upserts an app-level setting.
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.handle().Exec(`INSERT INTO settings (key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
+}
+
 func (s *Store) GetSyncKey(accountID, collectionID string) (string, error) {
 	var k string
 	err := s.handle().QueryRow(`SELECT sync_key FROM sync_keys WHERE account_id = ? AND collection_id = ?`, accountID, collectionID).Scan(&k)

@@ -44,6 +44,11 @@ const wails = {
         CopyEmails: AppBinding.CopyEmails,
         MoveEmails: AppBinding.MoveEmails,
         DeleteEmails: AppBinding.DeleteEmails,
+        GetAIConfig: AppBinding.GetAIConfig,
+        SaveAIConfig: AppBinding.SaveAIConfig,
+        AIValidateKey: AppBinding.AIValidateKey,
+        AISummarizeEmail: AppBinding.AISummarizeEmail,
+        AIDraftReply: AppBinding.AIDraftReply,
       }
       if (fnMap[fn]) return await fnMap[fn](...args)
     }
@@ -320,7 +325,7 @@ const addAccountError = ref('')
 
 // Settings page
 const showSettings = ref(false)
-const settingsTab = ref<'accounts'|'sync'|'signatures'>('accounts')
+const settingsTab = ref<'accounts'|'sync'|'signatures'|'ai'>('accounts')
 function openSettings() { showSettings.value = true }
 function openSettingsAccounts() { settingsTab.value = 'accounts'; loadAccounts(); showSettings.value = true }
 function closeSettings() { showSettings.value = false }
@@ -1252,7 +1257,7 @@ function openCompose(to = '', subject = '', body = '', cc = '') {
   composeTo.value = to; composeSubject.value = subject; composeBody.value = body; composeCc.value = cc; composeBcc.value = ''
   // An empty body means this isn't a forward prefill — clear any stale
   // forward flag. (openForward re-sets it after calling us.)
-  if (!body) composeForwardId.value = null
+  if (!body) { composeForwardId.value = null; composeReplyId.value = null }
   // Preselect this account's default signature ('' = none)
   composeSigId.value = sigDefaultId()
   composeError.value = ''; composeSuccess.value = ''; showCompose.value = true
@@ -1318,6 +1323,7 @@ function openReply() {
   // Prefill CC from the email's CC recipients (if any) so replies keep the
   // thread copied in — standard mail-client behaviour.
   openCompose(selectedEmail.value.fromEmail, 'Re: ' + selectedEmail.value.subject, '', selectedEmail.value.cc || '')
+  composeReplyId.value = selectedEmail.value.id
 }
 
 function openReplyAll() {
@@ -1336,6 +1342,7 @@ function openReplyAll() {
   const to = [...seen].join(', ')
   if (!to) { openReply(); return }
   openCompose(to, 'Re: ' + e.subject, '', '')
+  composeReplyId.value = e.id
 }
 
 function openForward() {
@@ -1350,6 +1357,71 @@ function openForward() {
 // to call ForwardEmail: original body quoted with formatting intact + its
 // attachments attached). Null means a normal compose.
 const composeForwardId = ref<string|null>(null)
+
+// === AI features (optional; any OpenAI-compatible provider, default
+// Cheaper Inference). Key stored locally; buttons only render when a key
+// is configured, and mail text is only sent when the user clicks an
+// AI action. ===
+const aiReady = ref(false)
+const aiCfg = ref({ apiKey: '', baseURL: '', model: '' })
+const aiModels = ref<string[]>([])
+const aiStatus = ref(''); const aiStatusOk = ref(false)
+const aiSummary = ref(''); const aiSummarizing = ref(false); const aiSummaryFor = ref('')
+const aiDrafting = ref(false)
+const composeReplyId = ref<string|null>(null)
+
+async function loadAIConfig() {
+  try {
+    const cfg = await wails.call('GetAIConfig')
+    if (cfg) {
+      aiCfg.value = { apiKey: cfg.apiKey || '', baseURL: cfg.baseURL || '', model: cfg.model || '' }
+      aiReady.value = !!cfg.apiKey
+      if (cfg.model) aiModels.value = [cfg.model]
+    }
+  } catch {}
+}
+loadAIConfig()
+
+async function aiValidate() {
+  aiStatus.value = 'Checking key…'; aiStatusOk.value = false
+  try {
+    const list = await wails.call('AIValidateKey', aiCfg.value.apiKey, aiCfg.value.baseURL)
+    if (!list || !list.length) throw new Error('No models returned — check the base URL')
+    aiModels.value = list
+    if (!list.includes(aiCfg.value.model)) {
+      aiCfg.value.model = list.includes('deepseek-v4-flash-0731') ? 'deepseek-v4-flash-0731' : list[0]
+    }
+    aiStatus.value = `Key OK — ${list.length} models available`; aiStatusOk.value = true
+  } catch (e: any) { aiStatus.value = e?.message || String(e) }
+}
+
+async function aiSave() {
+  try {
+    await wails.call('SaveAIConfig', aiCfg.value)
+    aiReady.value = !!aiCfg.value.apiKey.trim()
+    aiStatus.value = 'Saved'; aiStatusOk.value = true
+  } catch (e: any) { aiStatus.value = e?.message || String(e); aiStatusOk.value = false }
+}
+
+async function summarizeEmail() {
+  if (!selectedEmail.value || aiSummarizing.value) return
+  aiSummarizing.value = true; aiSummary.value = ''; aiSummaryFor.value = selectedEmail.value.id
+  try {
+    const s = await wails.call('AISummarizeEmail', selectedEmail.value.id)
+    aiSummary.value = s || '(no summary returned)'
+  } catch (e: any) { aiSummary.value = '⚠️ ' + (e?.message || String(e)) }
+  finally { aiSummarizing.value = false }
+}
+
+async function aiDraftReply() {
+  if (!composeReplyId.value || aiDrafting.value) return
+  aiDrafting.value = true
+  try {
+    const draft = await wails.call('AIDraftReply', composeReplyId.value, composeBody.value.trim())
+    if (draft) composeBody.value = draft
+  } catch (e: any) { composeError.value = 'AI draft failed: ' + (e?.message || String(e)) }
+  finally { aiDrafting.value = false }
+}
 
 const downloadingRef = ref<string|null>(null)
 const openingRef = ref<string|null>(null)
@@ -1975,6 +2047,7 @@ watch(selectedAccount, async () => {
             <button class="action-btn" @click="openReplyAll" title="Reply to sender and all recipients">↩↩ Reply All</button>
             <button class="action-btn muted" @click="openForward">↗ Forward</button>
             <button class="action-btn muted" @click="printEmail" title="Print this email">🖨 Print</button>
+            <button v-if="aiReady" class="action-btn" @click="summarizeEmail" title="AI summary of this email">✨ Summarize</button>
             <button class="action-btn muted" v-if="selectedEmail.body && (selectedEmail.bodyType === 'html' || selectedEmail.body.includes('<'))"
               @click="saveHTMLSource">⬇ Save</button>
             <span class="read-actions-sep"></span>
@@ -1993,6 +2066,11 @@ watch(selectedAccount, async () => {
           <div class="reading-body" v-else>
             <p v-for="(para, i) in (selectedEmail.body || selectedEmail.preview || 'No content').split(/\n{2,}/)" :key="i">{{ para.trim() }}</p>
           </div>
+        </div>
+        <div v-if="aiSummaryFor === selectedEmail.id && (aiSummary || aiSummarizing)" class="ai-summary">
+          <div class="ai-summary-head"><span>✨ AI summary</span><button class="ai-summary-close" @click="aiSummary = ''; aiSummarizing = false" title="Dismiss">✕</button></div>
+          <div v-if="aiSummarizing" class="muted">Thinking…</div>
+          <div v-else class="ai-summary-body">{{ aiSummary }}</div>
         </div>
         <div v-if="selectedEmail.hasAttachment" class="attachment-bar">
           <span class="attachment-bar-title">📎 Attachments</span>
@@ -2041,7 +2119,9 @@ watch(selectedAccount, async () => {
       <div v-if="composeForwardId" class="form-group compose-forward-note" style="font-size:12px;opacity:.75">
         Forwarding — the original message (formatting preserved) and its attachments will be included below your text.
       </div>
-      <div class="form-group"><label>Message</label><textarea v-model="composeBody" class="compose-body" rows="14" placeholder="Write your message..."></textarea></div>
+      <div class="form-group">
+        <div class="compose-msg-head"><label>Message</label><button v-if="composeReplyId && aiReady" class="ai-draft-btn" @click="aiDraftReply" :disabled="aiDrafting">{{ aiDrafting ? 'Drafting…' : '✨ Draft reply' }}</button></div>
+        <textarea v-model="composeBody" class="compose-body" rows="14" placeholder="Write your message..."></textarea></div>
       <div class="form-group">
         <label>Signature</label>
         <select v-model="composeSigId" class="account-sel">
@@ -2321,9 +2401,29 @@ watch(selectedAccount, async () => {
         <button :class="['settings-tab', { active: settingsTab === 'accounts' }]" @click="settingsTab = 'accounts'; loadAccounts()">Accounts</button>
         <button :class="['settings-tab', { active: settingsTab === 'sync' }]" @click="settingsTab = 'sync'">Mail &amp; Folders</button>
         <button :class="['settings-tab', { active: settingsTab === 'signatures' }]" @click="settingsTab = 'signatures'; loadSignatures(); startNewSig()">Signatures</button>
+        <button :class="['settings-tab', { active: settingsTab === 'ai' }]" @click="settingsTab = 'ai'; loadAIConfig()">AI</button>
       </div>
 
       <!-- ==== ACCOUNTS TAB ==== -->
+      <div v-if="settingsTab === 'ai'" class="settings-pane">
+        <h3>AI Features</h3>
+        <p class="muted" style="font-size:12px;margin-top:-6px">Optional. Works with any OpenAI-compatible provider — default Cheaper Inference. Your key stays on this machine; mail content is only sent when you explicitly use an AI action.</p>
+        <div class="form-group"><label>API key</label><input v-model="aiCfg.apiKey" type="password" placeholder="sk-…" autocomplete="off" /></div>
+        <div class="form-group"><label>API base URL</label><input v-model="aiCfg.baseURL" placeholder="https://api.cheaperinference.com/v1" /></div>
+        <div class="form-group">
+          <label>Model</label>
+          <select v-model="aiCfg.model" class="account-sel">
+            <option value="">— validate key to load models —</option>
+            <option v-for="m in aiModels" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </div>
+        <div class="compose-row">
+          <button class="compose-action" @click="aiValidate">Validate key &amp; load models</button>
+          <button class="compose-action" @click="aiSave">Save</button>
+        </div>
+        <p v-if="aiStatus" :class="aiStatusOk ? 'muted' : 'error-text'" style="font-size:12px">{{ aiStatus }}</p>
+      </div>
+
       <div v-if="settingsTab === 'accounts'" class="settings-pane">
         <div v-if="addAccountError" class="error-banner">{{ addAccountError }}</div>
         <div class="settings-cols">

@@ -1,5 +1,21 @@
 export namespace models {
 	
+	export class AIConfig {
+	    apiKey: string;
+	    baseURL: string;
+	    model: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.apiKey = source["apiKey"];
+	        this.baseURL = source["baseURL"];
+	        this.model = source["model"];
+	    }
+	}
 	export class Account {
 	    id: string;
 	    name: string;

@@ -286,6 +286,16 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .sender-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .sender-ct { font-size: 11px; color: var(--text-dim); font-weight: 500; }
 .att-clip { font-size: 11px; opacity: .8; margin-right: 2px; white-space: nowrap; }
+/* AI summary panel + compose draft button */
+.ai-summary { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 10px 0; background: rgba(122,120,255,.06); font-size: 13px; }
+.ai-summary-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 4px; }
+.ai-summary-close { background: none; border: none; cursor: pointer; opacity: .55; font-size: 12px; }
+.ai-summary-close:hover { opacity: 1; }
+.ai-summary-body { white-space: pre-wrap; line-height: 1.5; }
+.compose-msg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.ai-draft-btn { background: none; border: 1px solid var(--border); border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; color: var(--text-dim); }
+.ai-draft-btn:hover { color: var(--text); border-color: var(--accent); }
+.ai-draft-btn:disabled { opacity: .5; cursor: default; }
 .dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--gradient-accent); display: inline-block;

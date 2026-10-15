@@ -131,3 +131,12 @@ type Attachment struct {
 	IsInline  bool   `json:"isInline"`
 	ContentID string `json:"contentId,omitempty"`
 }
+
+// AIConfig holds the user's AI provider settings (any OpenAI-compatible
+// API; default Cheaper Inference). Empty APIKey means AI is not set up and
+// the features stay hidden.
+type AIConfig struct {
+	APIKey  string `json:"apiKey"`
+	BaseURL string `json:"baseURL"`
+	Model   string `json:"model"`
+}

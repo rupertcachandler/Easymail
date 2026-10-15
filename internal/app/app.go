@@ -24,6 +24,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"easymail/internal/activesync"
+	"easymail/internal/ai"
 	"easymail/internal/models"
 	"easymail/internal/store"
 )
@@ -1107,6 +1108,122 @@ func (a *App) SetOOFSettings(accountID string, settings *models.OOFSettings) err
 		return fmt.Errorf("account not connected")
 	}
 	return client.SetOOFSettings(a.ctx, settings)
+}
+
+// ===== AI features (optional; any OpenAI-compatible provider) =====
+
+const (
+	aiKeySetting   = "ai.api_key"
+	aiBaseSetting  = "ai.base_url"
+	aiModelSetting = "ai.model"
+)
+
+// aiContextCap bounds the per-email text sent to the model so a huge body
+// can't burn the user's balance in one call (~10k tokens).
+const aiContextCap = 40000
+
+// GetAIConfig returns the stored AI provider settings (empty = not set up).
+func (a *App) GetAIConfig() (*models.AIConfig, error) {
+	key, err := a.store.GetSetting(aiKeySetting)
+	if err != nil {
+		return nil, err
+	}
+	base, err := a.store.GetSetting(aiBaseSetting)
+	if err != nil {
+		return nil, err
+	}
+	model, err := a.store.GetSetting(aiModelSetting)
+	if err != nil {
+		return nil, err
+	}
+	return &models.AIConfig{APIKey: key, BaseURL: base, Model: model}, nil
+}
+
+// SaveAIConfig stores the AI provider settings.
+func (a *App) SaveAIConfig(cfg *models.AIConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("nil config")
+	}
+	if err := a.store.SetSetting(aiKeySetting, strings.TrimSpace(cfg.APIKey)); err != nil {
+		return err
+	}
+	if err := a.store.SetSetting(aiBaseSetting, strings.TrimSpace(cfg.BaseURL)); err != nil {
+		return err
+	}
+	return a.store.SetSetting(aiModelSetting, strings.TrimSpace(cfg.Model))
+}
+
+// AIValidateKey checks an API key against /v1/models and returns the model
+// ids — one call validates the key AND populates the picker.
+func (a *App) AIValidateKey(apiKey, baseURL string) ([]string, error) {
+	return ai.New(baseURL, strings.TrimSpace(apiKey)).ListModels()
+}
+
+// aiClient builds a client from stored settings, erroring if unset.
+func (a *App) aiClient() (*ai.Client, *models.AIConfig, error) {
+	cfg, err := a.GetAIConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	if cfg.APIKey == "" {
+		return nil, nil, fmt.Errorf("AI is not set up — add an API key in Settings → AI")
+	}
+	return ai.New(cfg.BaseURL, cfg.APIKey), cfg, nil
+}
+
+// aiEmailText renders one email as bounded plain text for prompts. HTML is
+// stripped (body_type is unreliable — sniff too) and the text is capped so
+// a monster thread can't nuke the balance in one call.
+func aiEmailText(e *models.Email) string {
+	who := e.From
+	if who == "" {
+		who = e.FromEmail
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "From: %s\nDate: %s\nSubject: %s\n\n", who, e.DateReceived.Format(time.RFC1123Z), e.Subject)
+	body := strings.TrimSpace(e.Body)
+	if strings.EqualFold(e.BodyType, "html") || strings.Contains(strings.ToLower(body), "<html") {
+		body = strings.TrimSpace(htmlToText(body))
+	}
+	if len(body) > aiContextCap {
+		body = body[:aiContextCap] + "\n…[truncated]"
+	}
+	b.WriteString(body)
+	return b.String()
+}
+
+// AISummarizeEmail summarizes one email via the configured model.
+func (a *App) AISummarizeEmail(emailID string) (string, error) {
+	c, cfg, err := a.aiClient()
+	if err != nil {
+		return "", err
+	}
+	e, err := a.store.GetEmail(emailID)
+	if err != nil {
+		return "", fmt.Errorf("cannot load email: %w", err)
+	}
+	system := "You are an email assistant inside a mail client. Summarise the email in 2-4 short bullet points: what it is about, key facts, dates or amounts, and anything the recipient is asked to do. Plain text only — no markdown, no preamble."
+	return c.Chat(a.ctx, cfg.Model, system, aiEmailText(e), 500)
+}
+
+// AIDraftReply drafts a plain-text reply to the given email. Any existing
+// compose text is treated as steering instruction. The signature is added
+// by the client separately, so the draft must not include one.
+func (a *App) AIDraftReply(emailID, instruction string) (string, error) {
+	c, cfg, err := a.aiClient()
+	if err != nil {
+		return "", err
+	}
+	e, err := a.store.GetEmail(emailID)
+	if err != nil {
+		return "", fmt.Errorf("cannot load email: %w", err)
+	}
+	prompt := aiEmailText(e)
+	if instr := strings.TrimSpace(instruction); instr != "" {
+		prompt = "The user has already started their reply — respect and build on it:\n<draft-so-far>\n" + instr + "\n</draft-so-far>\n\nThe email to reply to:\n" + prompt
+	}
+	system := "You are an email assistant. Draft a reply to the email below. Natural, concise plain text — no markdown, no subject line, no signature (one is added separately). Match the original's tone; polite but not obsequious. Answer any questions using only what the user provided or what is in the email; never invent facts."
+	return c.Chat(a.ctx, cfg.Model, system, prompt, 800)
 }
 
 // OutgoingAttachment carries one attachment's bytes into the SMTP message
