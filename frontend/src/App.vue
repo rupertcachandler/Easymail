@@ -54,6 +54,8 @@ const wails = {
         AIValidateKey: AppBinding.AIValidateKey,
         AISummarizeEmail: AppBinding.AISummarizeEmail,
         AIDraftReply: AppBinding.AIDraftReply,
+        GetEmailBody: AppBinding.GetEmailBody,
+        CreateMailFolder: AppBinding.CreateMailFolder,
       }
       if (fnMap[fn]) return await fnMap[fn](...args)
     }
