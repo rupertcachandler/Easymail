@@ -1852,10 +1852,15 @@ onMounted(async () => {
     if (!anchor) return
     const href = anchor.getAttribute('href') || ''
     if (/^(https?:|mailto:)/i.test(href)) {
-      e.preventDefault()
-      e.stopPropagation()
-      wails.call('OpenExternal', href)
-        .catch(() => { window.location.assign(href) })
+      if (!isWailsNative()) {
+        e.preventDefault()
+        e.stopPropagation()
+        wails.call('OpenExternal', href)
+          .catch(() => { window.location.assign(href) })
+      }
+      // Android: let the click navigate — MainActivity's shouldOverrideUrlLoading
+      // sends non-wails URLs to the system browser. OpenExternal (wails v3
+      // Browser.OpenURL) is a silent no-op there, so intercepting here kills links.
     }
   })
 })
