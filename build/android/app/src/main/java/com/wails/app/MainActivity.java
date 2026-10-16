@@ -122,6 +122,9 @@ public class MainActivity extends AppCompatActivity {
         settings.setAllowContentAccess(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        // Global text scale: the UI is all px sizes, so this is the only way to
+        // shrink EVERYTHING uniformly (owner prefers a denser phone typeface).
+        settings.setTextZoom(85);
 
         // Enable debugging in debug builds
         if (DEBUG) {
