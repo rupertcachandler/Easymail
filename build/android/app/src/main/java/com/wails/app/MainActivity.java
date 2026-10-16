@@ -197,6 +197,27 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                // Links inside mail bodies must leave the app: open them in the
+                // system browser (mailto:/tel:/https all handled by ACTION_VIEW).
+                // Without this, target=_blank links do nothing and plain links
+                // would navigate the wails app itself away.
+                android.net.Uri url = request.getUrl();
+                String host = url.getHost();
+                if (host != null && host.equals(WAILS_HOST)) {
+                    return false; // app asset — navigate in place
+                }
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, url);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                } catch (Exception e) {
+                    Log.w(TAG, "no handler for link " + url, e);
+                }
+                return true;
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (DEBUG) Log.d(TAG, "Page loaded: " + url);

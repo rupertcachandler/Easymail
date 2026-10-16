@@ -683,6 +683,12 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   .app.list-mode .sender-scroll { flex: 1 1 0 !important; min-height: 0 !important; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   /* Pin log/setup footer to the screen bottom: the list gets everything above it. */
   .app.list-mode .left-footer { margin-top: auto; flex-shrink: 0; padding-bottom: 6px; }
+  /* Mail reading: smaller type, tighter padding, and desktop-width mail HTML
+     (fixed-width tables, oversized images) forced to fit a 384px screen. */
+  .reading-body-card { padding: 12px 8px; }
+  .reading-body { padding: 14px; font-size: 14px; line-height: 1.6; min-height: 120px; overflow-wrap: anywhere; word-break: break-word; }
+  .reading-body table { max-width: 100% !important; width: auto !important; }
+  .reading-body pre, .reading-body code { white-space: pre-wrap; overflow-wrap: anywhere; }
   .app.read-mode .left { display: none; }
   .app.read-mode .right { flex: 1 1 0 !important; min-height: 0 !important; }
 }
