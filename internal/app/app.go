@@ -43,6 +43,7 @@ type App struct {
 	ctx     context.Context
 	store   *store.Store
 	clients map[string]*activesync.Client // account ID -> client
+	win     *application.WebviewWindow    // main window handle (SetWindow, for badge title)
 
 	// syncMu serializes every mail sync (frontend-triggered, the daily
 	// reconcile, and the fast poll) so SOGo never sees two concurrent drains

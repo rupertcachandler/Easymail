@@ -45,6 +45,11 @@ func main() {
 		URL:              "/",
 	})
 
+	// Hand the window to the App so SetBadge can update its title.
+	if wins := wailsApp.Window.AllWindows(); len(wins) > 0 {
+		easymail.SetWindow(wins[0])
+	}
+
 	if err := wailsApp.Run(); err != nil {
 		println("Error:", err.Error())
 	}
