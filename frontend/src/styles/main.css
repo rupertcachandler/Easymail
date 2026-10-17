@@ -285,6 +285,13 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 }
 .sender-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .sender-ct { font-size: 11px; color: var(--text-dim); font-weight: 500; }
+.unread-chip {
+  min-width: 18px; padding: 1px 7px; border-radius: 999px;
+  background: var(--gradient-accent); color: #fff;
+  font-size: 11px; font-weight: 700; text-align: center;
+  box-shadow: 0 0 8px var(--accent);
+}
+.sender-row.unread .sender-name { font-weight: 700; color: var(--text); }
 .att-clip { font-size: 11px; opacity: .8; margin-right: 2px; white-space: nowrap; }
 /* AI summary panel + compose draft button */
 .ai-summary { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 10px 0; background: rgba(122,120,255,.06); font-size: 13px; }
