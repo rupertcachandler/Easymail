@@ -13,6 +13,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as models$0 from "../models/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as application$0 from "../../../github.com/wailsapp/wails/v3/pkg/application/models.js";
 
 /**
  * AIDraftReply drafts a plain-text reply to the given email. Any existing
@@ -279,10 +282,30 @@ export function SendMail(accountID: string, to: string, cc: string, bcc: string,
 }
 
 /**
+ * SetBadge shows the unread-mail count: Linux emits the Unity LauncherEntry
+ * D-Bus signal (rendered by Dash-to-Dock/Ubuntu Dock/Plank) and updates the
+ * window title — "BOI (5 unread)" — which is the universal fallback that
+ * even vanilla GNOME Shell shows in the top bar and alt-tab; macOS sets the
+ * classic dock-icon badge; Android is a no-op (its notifications already
+ * carry the count; launchers only support dots, not numbers).
+ */
+export function SetBadge(count: number): $CancellablePromise<void> {
+    return $Call.ByID(4125101010, count);
+}
+
+/**
  * SetOOFSettings updates the Out-of-Office settings
  */
 export function SetOOFSettings(accountID: string, settings: models$0.OOFSettings | null): $CancellablePromise<void> {
     return $Call.ByID(2405253144, accountID, settings);
+}
+
+/**
+ * SetWindow gives the App its main window handle (called from main.go after
+ * window creation) so the badge can update the title bar.
+ */
+export function SetWindow(w: application$0.WebviewWindow | null): $CancellablePromise<void> {
+    return $Call.ByID(423361659, w);
 }
 
 /**
