@@ -1795,12 +1795,45 @@ const oofSettings = ref({ state: 'disabled', internalReply: '', externalReply: '
 const oofSaving = ref(false)
 const oofMessage = ref('')
 
+let audioCtx: AudioContext | null = null
+let lastBeep = 0
+// Two quick sine blips — the "mail has arrived" chime. WebAudio needs no
+// asset and works in every desktop webview.
+function playMailBeep() {
+  // Only when the app is actually visible: while backgrounded the Go side
+  // bounces the dock (macOS) instead — no double noise.
+  if (document.visibilityState !== 'visible') return
+  const now = Date.now()
+  if (now - lastBeep < 5000) return // debounce multi-folder rounds
+  lastBeep = now
+  try {
+    audioCtx = audioCtx || new AudioContext()
+    const t0 = audioCtx.currentTime
+    for (const off of [0, 0.18]) {
+      const osc = audioCtx.createOscillator()
+      const gain = audioCtx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = off ? 988 : 830
+      gain.gain.setValueAtTime(0.0001, t0 + off)
+      gain.gain.exponentialRampToValueAtTime(0.25, t0 + off + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + off + 0.16)
+      osc.connect(gain).connect(audioCtx.destination)
+      osc.start(t0 + off)
+      osc.stop(t0 + off + 0.18)
+    }
+  } catch { /* audio unavailable — stay silent */ }
+}
+
 const appVersion = ref('…')
 onMounted(async () => {
   // Register event handlers BEFORE the first sync: loadAccounts (called below)
   // triggers a SyncFolders that can race the Go connect goroutine; the
   // account-connected retry must not fire into an unregistered handler.
   wails.on('account-connected', (id: string) => { if (id === selectedAccount.value) syncAll() })
+  // New mail arrived via the background poll: chime (foreground). The Go
+  // side also signals the platform natively (macOS dock bounce) when the
+  // app is not visible.
+  wails.on('new-mail', (count: number) => { playMailBeep(); console.log('new-mail', count) })
   loadAccounts()
   loadSignatures(); migrateLegacySignature()
   restoreSyncedFolders()
