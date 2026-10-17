@@ -19,7 +19,7 @@ release: "1"
 contents:
   - src: "./bin/boi"
     dst: "/usr/bin/boi"
-  - src: "./appicon.png"
+  - src: "./build/appicon.png"
     dst: "/usr/share/icons/hicolor/128x128/apps/boi.png"
   - src: "./build/linux/boi.desktop"
     dst: "/usr/share/applications/boi.desktop"
