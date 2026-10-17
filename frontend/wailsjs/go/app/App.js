@@ -90,6 +90,10 @@ export function GetVersion() {
   return window['go']['app']['App']['GetVersion']();
 }
 
+export function SetBadge(arg1) {
+  return window['go']['app']['App']['SetBadge'](arg1);
+}
+
 export function ListAccounts() {
   return window['go']['app']['App']['ListAccounts']();
 }

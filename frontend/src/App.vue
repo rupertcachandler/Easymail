@@ -41,6 +41,7 @@ const wails = {
         GetMessageSource: AppBinding.GetMessageSource,
         GetActivityLog: AppBinding.GetActivityLog,
         GetVersion: AppBinding.GetVersion,
+        SetBadge: AppBinding.SetBadge,
         CopyEmails: AppBinding.CopyEmails,
         MoveEmails: AppBinding.MoveEmails,
         DeleteEmails: AppBinding.DeleteEmails,
@@ -99,6 +100,13 @@ interface CalendarEvent { id: string; subject: string; startTime: any; endTime: 
 const accounts = ref<Account[]>([])
 const folders = ref<Folder[]>([])
 const allEmails = ref<Email[]>([])
+
+// Unread across every cached folder — drives the icon badge. Reacts to both
+// new-mail syncs and read/unread toggles because the reduce touches e.isRead.
+// SetBadge: Linux = dock count (D-Bus) + "BOI (N unread)" window title,
+// macOS = dock badge. Immediate so the badge is right at startup.
+const unreadCount = computed(() => allEmails.value.reduce((n, e) => n + (e.isRead ? 0 : 1), 0))
+watch(unreadCount, (n) => { if (isWailsNative()) void wails.call('SetBadge', n) }, { immediate: true })
 const contacts = ref<Contact[]>([])
 const calendarEvents = ref<CalendarEvent[]>([])
 const selectedAccount = ref('')

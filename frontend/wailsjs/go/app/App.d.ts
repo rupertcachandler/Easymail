@@ -45,6 +45,7 @@ export function GetMessageSource(arg1:string,arg2:string,arg3:string):Promise<st
 export function GetOOFSettings(arg1:string):Promise<models.OOFSettings>;
 
 export function GetVersion():Promise<string>;
+export function SetBadge(arg1:number):Promise<void>;
 
 export function ListAccounts():Promise<Array<models.Account>>;
 
