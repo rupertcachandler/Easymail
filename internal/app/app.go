@@ -616,6 +616,14 @@ func (a *App) applySyncResults(accountID, serverID string, trigger string, email
 			log.Printf("applySyncResults: failed to apply %d deletions for %s: %v", len(deletedIDs), folderID, err)
 		}
 	}
+	// New-mail alert: UI event (frontend chime) + platform signal (Android
+	// notification, macOS dock bounce). Gated to background poll arrivals:
+	// manual syncs already refresh the visible list, and a first-connect
+	// backfill can drop hundreds of mails at once — no siren for those.
+	if trigger == "poll" && newN > 0 {
+		a.emitEvent("new-mail", newN)
+		a.notifyNewMail(newN)
+	}
 }
 
 // folderName resolves a folder's display name from its ServerID for use in
@@ -1937,7 +1945,6 @@ func (a *App) pollMailOnce() {
 				continue
 			}
 			a.applySyncResults(accountID, f.ServerID, "poll", emails, deletedIDs)
-			synced++
 			if len(emails) > 0 || len(deletedIDs) > 0 {
 				log.Printf("pollMailOnce: %s (%s) +%d -%d", accountID, f.Name, len(emails), len(deletedIDs))
 				// Only notify the UI when something actually changed. Emitting

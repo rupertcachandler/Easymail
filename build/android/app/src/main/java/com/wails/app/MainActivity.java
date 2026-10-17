@@ -101,6 +101,16 @@ public class MainActivity extends AppCompatActivity {
         bridge = new WailsBridge(this);
         bridge.initialize();
 
+        // Keep-alive: start the foreground service so the Go mail poll keeps
+        // running while BOI is backgrounded. Android freezes cached apps,
+        // which used to stall new-mail pickup until the next app open. The
+        // bridge call also requests the Android 13+ notification permission.
+        try {
+            bridge.startForegroundService("{\"title\":\"BOI mail\",\"text\":\"Checking for new mail in the background\"}");
+        } catch (Exception e) {
+            android.util.Log.e("MainActivity", "startForegroundService failed", e);
+        }
+
         // Set up WebView
         setupWebView();
 

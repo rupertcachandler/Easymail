@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -85,6 +86,15 @@ public class WailsBridge {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private WebView webView;
     private volatile boolean initialized = false;
+
+    // App-lifetime singleton so native code (Go, via notify_android.go) can
+    // reach the bridge for system notifications. Set in the constructor;
+    // there is exactly one bridge per process.
+    public static volatile WailsBridge instance;
+    // True between onResume and onPause. Gates whether a new-mail alert posts
+    // a system notification (backgrounded — the sound is the beep) or leaves
+    // it to the in-app chime (visible — no double noise).
+    public volatile boolean appInForeground = false;
     private SharedPreferences cachedSecurePrefs;
     private boolean securePrefsResolved = false;
 
@@ -123,6 +133,7 @@ public class WailsBridge {
     private static native void nativeEmitEvent(String name, String json);
 
     public WailsBridge(Activity activity) {
+        instance = this;
         this.activity = activity;
     }
 
@@ -173,11 +184,48 @@ public class WailsBridge {
     }
 
     public void onResume() {
+        appInForeground = true;
         if (initialized) nativeOnResume();
     }
 
     public void onPause() {
+        appInForeground = false;
         if (initialized) nativeOnPause();
+    }
+
+    /**
+     * "New mail arrived" system notification, called from Go via JNI
+     * (internal/app/notify_android.go). Skipped while the app is visible —
+     * the frontend plays its chime for that case; the notification sound is
+     * the backgrounded signal.
+     */
+    public void notifyNewMail(String title, String text) {
+        if (appInForeground) return;
+        try {
+            NotificationManager nm = (NotificationManager) activity.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            final String channelId = "new_mail";
+            if (Build.VERSION.SDK_INT >= 26) {
+                NotificationChannel ch = new NotificationChannel(channelId, "New mail", NotificationManager.IMPORTANCE_DEFAULT);
+                ch.setDescription("Sound alert when mail arrives while BOI is in the background");
+                nm.createNotificationChannel(ch);
+            }
+            Intent open = new Intent(activity, MainActivity.class);
+            open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            PendingIntent pi = PendingIntent.getActivity(activity, 1001, open,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            Notification n = new NotificationCompat.Builder(activity, channelId)
+                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle(title)
+                    .setContentText(text)
+                    .setContentIntent(pi)
+                    .setCategory(NotificationCompat.CATEGORY_EMAIL)
+                    .setAutoCancel(true)
+                    .build();
+            nm.notify(2001, n);
+        } catch (Exception e) {
+            Log.e(TAG, "notifyNewMail failed", e);
+        }
     }
 
     public void onStop() {
