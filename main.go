@@ -35,7 +35,7 @@ func main() {
 		},
 	})
 
-	wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+	w := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "BOI",
 		Width:            1200,
 		Height:           800,
@@ -46,9 +46,7 @@ func main() {
 	})
 
 	// Hand the window to the App so SetBadge can update its title.
-	if wins := wailsApp.Window.AllWindows(); len(wins) > 0 {
-		easymail.SetWindow(wins[0])
-	}
+	easymail.SetWindow(w)
 
 	if err := wailsApp.Run(); err != nil {
 		println("Error:", err.Error())
