@@ -10,19 +10,19 @@ version: "0.5.1"
 section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
-description: "A v3tpl application"
+description: "A boi application"
 vendor: "My Company"
 homepage: "https://wails.io"
 license: "MIT"
 release: "1"
 
 contents:
-  - src: "./bin/v3tpl"
-    dst: "/usr/local/bin/v3tpl"
+  - src: "./bin/boi"
+    dst: "/usr/local/bin/boi"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/v3tpl.png"
-  - src: "./build/linux/v3tpl.desktop"
-    dst: "/usr/share/applications/v3tpl.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/boi.png"
+  - src: "./build/linux/boi.desktop"
+    dst: "/usr/share/applications/boi.desktop"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
 depends:
