@@ -23,7 +23,7 @@ import androidx.core.app.NotificationCompat;
 public class WailsForegroundService extends android.app.Service {
     public static final String ACTION_START = "com.wails.app.FGS_START";
     private static final String CHANNEL_ID = "wails_foreground";
-    private static final int NOTIFICATION_ID = 0x57A1; // "WAI"
+    public static final int NOTIFICATION_ID = 0x57A1; // "WAI"
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -36,9 +36,23 @@ public class WailsForegroundService extends android.app.Service {
 
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel ch = new NotificationChannel(
-                    CHANNEL_ID, "Background work", NotificationManager.IMPORTANCE_LOW);
-            nm.createNotificationChannel(ch);
+            // The badge IS the unread counter: Samsung-style launchers badge
+            // the icon with this notification's number, so the channel must
+            // allow badges (new_mail channel separately badges too). Channels
+            // ignore most changes after creation — recreate once if an old
+            // channel blocked badges.
+            NotificationChannel ch = nm.getNotificationChannel(CHANNEL_ID);
+            if (ch != null && !ch.canShowBadge()) {
+                nm.deleteNotificationChannel(CHANNEL_ID);
+                ch = null;
+            }
+            if (ch == null) {
+                ch = new NotificationChannel(CHANNEL_ID, "Background work",
+                        NotificationManager.IMPORTANCE_MIN);
+                ch.setDescription("Keeps BOI checking for new mail; carries the unread-count badge");
+                ch.setShowBadge(true);
+                nm.createNotificationChannel(ch);
+            }
         }
 
         PendingIntent contentIntent = null;

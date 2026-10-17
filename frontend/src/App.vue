@@ -547,7 +547,7 @@ async function deleteAccount(a: any) {
 }
 
 // === UNIBOX: People-centric grouping (sent + received merged) ===
-interface PersonInfo { email: string; name: string; lastDate: Date; count: number; hasUnread: boolean; attCount: number }
+interface PersonInfo { email: string; name: string; lastDate: Date; count: number; unreadCount: number; hasUnread: boolean; attCount: number }
 
 const myEmail = computed(() => {
   const acc = accounts.value.find(a => a.id === selectedAccount.value)
@@ -606,11 +606,11 @@ const peopleGroups = computed(() => {
     const name = otherPersonName(e)
     const existing = byPerson.get(key)
     if (!existing) {
-      byPerson.set(key, { email: key, name, lastDate: d, count: 1, hasUnread: !e.isRead, attCount: e.hasAttachment ? 1 : 0 })
+      byPerson.set(key, { email: key, name, lastDate: d, count: 1, unreadCount: e.isRead ? 0 : 1, hasUnread: !e.isRead, attCount: e.hasAttachment ? 1 : 0 })
     } else {
       existing.count++
       if (d > existing.lastDate) existing.lastDate = d
-      if (!e.isRead) existing.hasUnread = true
+      if (!e.isRead) { existing.hasUnread = true; existing.unreadCount++ }
       if (e.hasAttachment) existing.attCount++
     }
   }
@@ -1999,7 +1999,7 @@ watch(selectedAccount, async () => {
         <template v-if="sortBy === 'date'">
           <template v-for="g in senderGroups" :key="g.label">
             <div class="group-label">{{ g.label }}</div>
-            <button v-for="s in g.people" :key="s.email" :class="['sender-row', { active: selectedPerson === s.email }]" @click="selectPerson(s.email)">
+            <button v-for="s in g.people" :key="s.email" :class="['sender-row', { active: selectedPerson === s.email, unread: s.hasUnread }]" @click="selectPerson(s.email)">
               <img :src="avatarUrl(s.email, 36)" class="avatar-sm" />
               <div class="sender-info">
                 <span class="sender-name">{{ s.name }}</span>
@@ -2007,15 +2007,15 @@ watch(selectedAccount, async () => {
               </div>
               <div class="sender-right">
                 <span v-if="s.attCount" class="att-clip" :title="s.attCount + ' mail' + (s.attCount > 1 ? 's' : '') + ' with attachments'">📎{{ s.attCount > 1 ? s.attCount : '' }}</span>
-                <span v-if="s.hasUnread" class="dot"></span>
-                <span class="sender-ct">{{ s.count }}</span>
+                <span v-if="s.unreadCount" class="unread-chip" :title="s.unreadCount + ' unread from ' + s.name">{{ s.unreadCount }}</span>
+                <span v-else class="sender-ct">{{ s.count }}</span>
               </div>
             </button>
           </template>
         </template>
 
         <template v-else>
-          <button v-for="s in sortedPeople" :key="s.email" :class="['sender-row', { active: selectedPerson === s.email }]" @click="selectPerson(s.email)">
+          <button v-for="s in sortedPeople" :key="s.email" :class="['sender-row', { active: selectedPerson === s.email, unread: s.hasUnread }]" @click="selectPerson(s.email)">
             <img :src="avatarUrl(s.email, 36)" class="avatar-sm" />
             <div class="sender-info">
               <span class="sender-name">{{ s.name }}</span>
@@ -2023,8 +2023,8 @@ watch(selectedAccount, async () => {
             </div>
             <div class="sender-right">
               <span v-if="s.attCount" class="att-clip" :title="s.attCount + ' mail' + (s.attCount > 1 ? 's' : '') + ' with attachments'">📎{{ s.attCount > 1 ? s.attCount : '' }}</span>
-              <span v-if="s.hasUnread" class="dot"></span>
-              <span class="sender-ct">{{ s.count }}</span>
+              <span v-if="s.unreadCount" class="unread-chip" :title="s.unreadCount + ' unread from ' + s.name">{{ s.unreadCount }}</span>
+              <span v-else class="sender-ct">{{ s.count }}</span>
             </div>
           </button>
         </template>
@@ -2720,6 +2720,15 @@ watch(selectedAccount, async () => {
 
 .bubble-received .bubble-content { border-left: 3px solid transparent; }
 
+/* Unread mail marking: accent bar + tinted bubble + bold sender. Uses an
+   inset box-shadow for the bar because bubble-content's border-left colour
+   is set inline (per-account colour) and would override any CSS rule. */
+.bubble-row.unread .bubble-content {
+  background: rgba(91,127,255,0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.bubble-row.unread .bubble-from { font-weight: 700; color: var(--text); }
 .bubble-row.unread .bubble-subject { font-weight: 600; color: var(--text); }
 .bubble-row.selected {
   background: var(--bg-selected) !important;

@@ -186,6 +186,22 @@ public class WailsBridge {
     public void onResume() {
         appInForeground = true;
         if (initialized) nativeOnResume();
+        clearNewMailNotification();
+    }
+
+    /**
+     * Cancel the "new mail" notification (fixed ID 2001) when the user opens
+     * the app — otherwise the shade keeps showing a stale count no matter
+     * what they read inside BOI. Tapping the notification already clears it
+     * (setAutoCancel); this covers opening the app directly from the launcher.
+     */
+    public void clearNewMailNotification() {
+        try {
+            NotificationManager nm = (NotificationManager) activity.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) nm.cancel(2001);
+        } catch (Exception e) {
+            Log.e(TAG, "clearNewMailNotification failed", e);
+        }
     }
 
     public void onPause() {
@@ -225,6 +241,36 @@ public class WailsBridge {
             nm.notify(2001, n);
         } catch (Exception e) {
             Log.e(TAG, "notifyNewMail failed", e);
+        }
+    }
+
+    /**
+     * Mirror the unread count onto the always-present foreground-service
+     * notification (same ID, silent MIN-importance channel) so launchers that
+     * badge with the notification's number — Samsung One UI by default — show
+     * the live unread count on the app icon, same as the desktop title bar.
+     * Called from Go (App.SetBadge → JNI) on every unread-count change.
+     */
+    public void updateMailBadge(int count) {
+        if (count < 0) count = 0;
+        try {
+            NotificationManager nm = (NotificationManager) activity.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            Intent launch = activity.getPackageManager().getLaunchIntentForPackage(activity.getPackageName());
+            PendingIntent pi = launch != null ? PendingIntent.getActivity(activity, 0, launch,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE) : null;
+            Notification n = new NotificationCompat.Builder(activity, "wails_foreground")
+                    .setSmallIcon(android.R.drawable.ic_popup_sync)
+                    .setContentTitle("BOI mail")
+                    .setContentText(count > 0 ? count + " unread" : "Checking for new mail in the background")
+                    .setNumber(count)
+                    .setOnlyAlertOnce(true)
+                    .setOngoing(true)
+                    .setContentIntent(pi)
+                    .build();
+            nm.notify(WailsForegroundService.NOTIFICATION_ID, n);
+        } catch (Exception e) {
+            Log.e(TAG, "updateMailBadge failed", e);
         }
     }
 

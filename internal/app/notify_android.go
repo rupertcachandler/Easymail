@@ -15,6 +15,7 @@ static JavaVM* g_mail_jvm = NULL;
 static jclass g_mail_bridge_cls = NULL;
 static jfieldID g_mail_instance_fid = NULL;
 static jmethodID g_mail_notify_mid = NULL;
+static jmethodID g_mail_badge_mid = NULL;
 
 __attribute__((visibility("default"))) jint JNI_OnLoad(JavaVM* vm, void* reserved) {
 	g_mail_jvm = vm;
@@ -31,6 +32,8 @@ __attribute__((visibility("default"))) jint JNI_OnLoad(JavaVM* vm, void* reserve
 		"Lcom/wails/app/WailsBridge;");
 	g_mail_notify_mid = (*env)->GetMethodID(env, cls, "notifyNewMail",
 		"(Ljava/lang/String;Ljava/lang/String;)V");
+	g_mail_badge_mid = (*env)->GetMethodID(env, cls, "updateMailBadge",
+		"(I)V");
 	return JNI_VERSION_1_6;
 }
 
@@ -58,6 +61,25 @@ static void mailNotifyNative(const char* title, const char* text) {
 	if (jtitle != NULL) (*env)->DeleteLocalRef(env, jtitle);
 	if (jtext != NULL) (*env)->DeleteLocalRef(env, jtext);
 }
+
+static void mailBadgeNative(int count) {
+	if (g_mail_jvm == NULL || g_mail_bridge_cls == NULL ||
+		g_mail_badge_mid == NULL || g_mail_instance_fid == NULL) {
+		return;
+	}
+	JNIEnv* env = NULL;
+	if ((*g_mail_jvm)->AttachCurrentThread(g_mail_jvm, &env, NULL) != JNI_OK || env == NULL) {
+		return;
+	}
+	jobject bridge = (*env)->GetStaticObjectField(env, g_mail_bridge_cls, g_mail_instance_fid);
+	if (bridge == NULL) {
+		return;
+	}
+	(*env)->CallVoidMethod(env, bridge, g_mail_badge_mid, (jint)count);
+	if ((*env)->ExceptionCheck(env)) {
+		(*env)->ExceptionClear(env);
+	}
+}
 */
 import "C"
 
@@ -73,4 +95,11 @@ func platformNotify(title, text string) {
 	cx := C.CString(text)
 	defer C.free(unsafe.Pointer(cx))
 	C.mailNotifyNative(ct, cx)
+}
+
+// platformUpdateBadge mirrors the unread count onto the foreground-service
+// notification (WailsBridge.updateMailBadge) so Samsung-style launchers can
+// badge the icon with the live unread number.
+func platformUpdateBadge(count int) {
+	C.mailBadgeNative(C.int(count))
 }

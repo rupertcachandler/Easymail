@@ -286,8 +286,8 @@ export function SendMail(accountID: string, to: string, cc: string, bcc: string,
  * D-Bus signal (rendered by Dash-to-Dock/Ubuntu Dock/Plank) and updates the
  * window title — "BOI (5 unread)" — which is the universal fallback that
  * even vanilla GNOME Shell shows in the top bar and alt-tab; macOS sets the
- * classic dock-icon badge; Android is a no-op (its notifications already
- * carry the count; launchers only support dots, not numbers).
+ * classic dock-icon badge; Android mirrors the count onto the foreground-
+ * service notification so the launcher icon badges with the same number.
  */
 export function SetBadge(count: number): $CancellablePromise<void> {
     return $Call.ByID(4125101010, count);
