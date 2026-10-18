@@ -31,7 +31,7 @@ import (
 
 // version is set at build time via -ldflags "-X easymail/internal/app.version=...".
 // (The old -X main.version=... was a silent no-op because main has no version var.)
-var version = "dev"
+var version = "0.5.2"
 
 // GetVersion returns the current build number so the UI can show it.
 func (a *App) GetVersion() string {
@@ -249,6 +249,7 @@ func (a *App) saveFileDialog(title, directory, filename string) (string, error) 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	log.Println("BOI starting up")
+	go startUpdateWatcher(a)
 
 	accounts, err := a.store.ListAccounts()
 	if err != nil {

@@ -274,6 +274,31 @@ public class WailsBridge {
         }
     }
 
+    /**
+     * Hand a verified APK to Android's package installer via FileProvider.
+     * Called from Go (App.InstallUpdate → JNI). First run triggers the
+     * system's "install unknown apps" prompt — user-approved, like any
+     * sideload.
+     */
+    public void installUpdate(String apkPath) {
+        try {
+            java.io.File apk = new java.io.File(apkPath);
+            if (!apk.exists()) {
+                Log.e(TAG, "installUpdate: apk missing at " + apkPath);
+                return;
+            }
+            android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(activity,
+                    activity.getPackageName() + ".updateprovider", apk);
+            Intent i = new Intent(Intent.ACTION_VIEW);
+            i.setDataAndType(uri, "application/vnd.android.package-archive");
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity.startActivity(i);
+        } catch (Exception e) {
+            Log.e(TAG, "installUpdate failed", e);
+            emitEvent("update-error", "installer failed: " + e.getMessage());
+        }
+    }
+
     public void onStop() {
         if (initialized) nativeOnStop();
         pauseFeaturesForBackground();

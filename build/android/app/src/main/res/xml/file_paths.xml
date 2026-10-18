@@ -3,4 +3,7 @@
     <!-- Camera captures are written here and shared with the camera app via the
          FileProvider. -->
     <cache-path name="captures" path="captures/" />
+    <!-- Self-update APKs land in the app-private files dir (Go writes to
+         StoragePath()/updates/). -->
+    <files-path name="updates" path="updates/" />
 </paths>

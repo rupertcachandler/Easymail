@@ -206,6 +206,16 @@ export function GetVersion(): $CancellablePromise<string> {
 }
 
 /**
+ * InstallUpdate is the binding behind the in-app update banner: downloads
+ * the pending update (if not already), verifies its sha256, then hands it to
+ * Android's package installer via WailsBridge.installUpdate. Progress and
+ * failures surface as "update-progress" / "update-error" events.
+ */
+export function InstallUpdate(): $CancellablePromise<void> {
+    return $Call.ByID(1768869569);
+}
+
+/**
  * ListAccounts returns all configured accounts
  */
 export function ListAccounts(): $CancellablePromise<(models$0.Account | null)[] | null> {

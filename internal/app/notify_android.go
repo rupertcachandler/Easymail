@@ -16,6 +16,7 @@ static jclass g_mail_bridge_cls = NULL;
 static jfieldID g_mail_instance_fid = NULL;
 static jmethodID g_mail_notify_mid = NULL;
 static jmethodID g_mail_badge_mid = NULL;
+static jmethodID g_mail_install_mid = NULL;
 
 __attribute__((visibility("default"))) jint JNI_OnLoad(JavaVM* vm, void* reserved) {
 	g_mail_jvm = vm;
@@ -34,6 +35,8 @@ __attribute__((visibility("default"))) jint JNI_OnLoad(JavaVM* vm, void* reserve
 		"(Ljava/lang/String;Ljava/lang/String;)V");
 	g_mail_badge_mid = (*env)->GetMethodID(env, cls, "updateMailBadge",
 		"(I)V");
+	g_mail_install_mid = (*env)->GetMethodID(env, cls, "installUpdate",
+		"(Ljava/lang/String;)V");
 	return JNI_VERSION_1_6;
 }
 
@@ -80,6 +83,29 @@ static void mailBadgeNative(int count) {
 		(*env)->ExceptionClear(env);
 	}
 }
+
+static void installUpdateNative(const char* apkPath) {
+	if (g_mail_jvm == NULL || g_mail_bridge_cls == NULL ||
+		g_mail_install_mid == NULL || g_mail_instance_fid == NULL) {
+		return;
+	}
+	JNIEnv* env = NULL;
+	if ((*g_mail_jvm)->AttachCurrentThread(g_mail_jvm, &env, NULL) != JNI_OK || env == NULL) {
+		return;
+	}
+	jobject bridge = (*env)->GetStaticObjectField(env, g_mail_bridge_cls, g_mail_instance_fid);
+	if (bridge == NULL) {
+		return;
+	}
+	jstring jpath = (*env)->NewStringUTF(env, apkPath);
+	if (jpath != NULL) {
+		(*env)->CallVoidMethod(env, bridge, g_mail_install_mid, jpath);
+	}
+	if ((*env)->ExceptionCheck(env)) {
+		(*env)->ExceptionClear(env);
+	}
+	if (jpath != NULL) (*env)->DeleteLocalRef(env, jpath);
+}
 */
 import "C"
 
@@ -102,4 +128,12 @@ func platformNotify(title, text string) {
 // badge the icon with the live unread number.
 func platformUpdateBadge(count int) {
 	C.mailBadgeNative(C.int(count))
+}
+
+// platformInstallUpdate hands a verified APK to WailsBridge.installUpdate,
+// which routes it through FileProvider into Android's package installer.
+func platformInstallUpdate(path string) {
+	cp := C.CString(path)
+	defer C.free(unsafe.Pointer(cp))
+	C.installUpdateNative(cp)
 }

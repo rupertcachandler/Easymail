@@ -47,6 +47,7 @@ const wails = {
         GetActivityLog: AppBinding.GetActivityLog,
         GetVersion: AppBinding.GetVersion,
         SetBadge: AppBinding.SetBadge,
+        InstallUpdate: AppBinding.InstallUpdate,
         CopyEmails: AppBinding.CopyEmails,
         MoveEmails: AppBinding.MoveEmails,
         DeleteEmails: AppBinding.DeleteEmails,
@@ -114,6 +115,19 @@ const allEmails = ref<Email[]>([])
 // macOS = dock badge. Immediate so the badge is right at startup.
 const unreadCount = computed(() => allEmails.value.reduce((n, e) => n + (e.isRead ? 0 : 1), 0))
 watch(unreadCount, (n) => { if (isWailsNative()) void wails.call('SetBadge', n) }, { immediate: true })
+
+// === SELF-UPDATE (Android) ===
+// Go's update watcher polls the Ed25519-signed manifest on mail.btl.io and
+// emits update-available for a newer version; the banner taps InstallUpdate
+// (download + sha256 check + system package installer). update-progress /
+// update-error events drive the label. Android-only display — desktop
+// updates come from the deb/Mac build.
+const isAndroid = /Android/i.test(navigator.userAgent)
+const updateInfo = ref<{ version: string; notes?: string } | null>(null)
+const updateStatus = ref('')
+function doInstallUpdate() {
+  if (!updateStatus.value) void wails.call('InstallUpdate')
+}
 const contacts = ref<Contact[]>([])
 const calendarEvents = ref<CalendarEvent[]>([])
 const selectedAccount = ref('')
@@ -1913,6 +1927,10 @@ onMounted(async () => {
     if (!folder) return
     reloadFolderEmails(folder)
   })
+  // Self-update events (Android OTA): banner state comes from Go.
+  wails.on('update-available', (data: any) => { if (data && data.version) { updateInfo.value = data; updateStatus.value = '' } })
+  wails.on('update-progress', (s: string) => { updateStatus.value = String(s) })
+  wails.on('update-error', () => { updateStatus.value = ''; updateInfo.value = null })
   window.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'F11') { e.preventDefault(); toggleFullscreen() }
   })
@@ -2003,6 +2021,12 @@ watch(selectedAccount, async () => {
     <!-- Soft per-account window tint (user 1 green, user 2 blue, user 3 purple, …).
          Purely decorative: pointer-events none so it never blocks clicks. -->
     <div class="account-tint" :style="{ background: accountTint }" :key="selectedAccount"></div>
+    <!-- Self-update banner (Android OTA): tap downloads + verifies + opens
+         the system package installer. -->
+    <div v-if="isAndroid && updateInfo" class="update-banner" @click="doInstallUpdate">
+      <span v-if="updateStatus">⬆ BOI {{ updateInfo.version }} — {{ updateStatus }}…</span>
+      <span v-else>⬆ BOI {{ updateInfo.version }} available — tap to install</span>
+    </div>
     <!-- ===== LEFT: People list ===== -->
     <div class="left">
       <div class="left-toolbar">
