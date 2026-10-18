@@ -113,6 +113,29 @@ const selectedAccount = ref('')
 const selectedFolder = ref('')
 const selectedPerson = ref<string|null>(null)
 const selectedEmail = ref<Email|null>(null)
+
+// === EMAIL HTML SANDBOX ===
+// Mail HTML renders inside a sandboxed iframe (unique origin): the email's
+// own <style> blocks, absolutely-positioned wrappers and fixed overlays stay
+// trapped inside instead of painting "strata" over the app (the old v-html
+// injection let every email draw across the whole window and restyle the
+// app). The only script inside is our injected relay, which reports content
+// height (iframe sizing) and forwards link clicks out to the app.
+const emailIframeH = ref(0)
+const emailDoc = computed(() => buildEmailDoc(selectedEmail.value))
+watch(() => selectedEmail.value?.id, () => { emailIframeH.value = 0 })
+
+function buildEmailDoc(e: Email | null): string {
+  let body = e?.body || ''
+  // Strip script blocks and meta-refresh/base before wrapping: besides the
+  // obvious risk, an unterminated <script> in the mail would otherwise
+  // swallow our relay script tag.
+  body = body.replace(/<script[\s\S]*?<\/script\s*>/gi, '').replace(/<script\b[^>]*>/gi, '')
+  body = body.replace(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*>/gi, '')
+  body = body.replace(/<base\b[^>]*>/gi, '')
+  const relay = `<script>(function(){var rep=function(){try{parent.postMessage({type:'em-size',h:Math.ceil(document.documentElement.scrollHeight)},'*')}catch(e){}};rep();window.addEventListener('load',rep);setTimeout(rep,400);setTimeout(rep,1500);setTimeout(rep,4000);if(window.ResizeObserver){try{new ResizeObserver(rep).observe(document.body)}catch(e){}};document.addEventListener('click',function(e){try{var t=e.target;var a=t&&t.closest?t.closest('a[href]'):null;if(!a)return;var href=a.getAttribute('href')||'';if(/^(https?:|mailto:)/i.test(href)){e.preventDefault();parent.postMessage({type:'em-link',href:a.href||href},'*')}}catch(e){}});})();<\/script>`
+  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:14px 18px;background:#fff;color:#111;font-size:15px;line-height:1.6;overflow-wrap:break-word}img{max-width:100%;height:auto}table{max-width:100%!important}</style></head><body>${body}${relay}</body></html>`
+}
 const searchQuery = ref('')
 const sortBy = ref<'date'|'name'>('date')
 const sortDir = ref<'asc'|'desc'>('desc')
@@ -1877,6 +1900,25 @@ onMounted(async () => {
         .catch(() => { window.location.assign(href) })
     }
   })
+  // Relay from the email sandbox iframe: em-size reports content height to
+  // size the iframe; em-link forwards anchor clicks — OpenExternal on
+  // desktop, on Android a top-level navigation (MainActivity's
+  // shouldOverrideUrlLoading routes it to the system browser).
+  window.addEventListener('message', (ev: MessageEvent) => {
+    const d = ev.data as { type?: string; h?: number; href?: string } | null
+    if (!d || typeof d !== 'object') return
+    if (d.type === 'em-size' && typeof d.h === 'number' && d.h > 0) {
+      emailIframeH.value = Math.min(d.h, 20000)
+    } else if (d.type === 'em-link' && d.href && /^(https?:|mailto:)/i.test(d.href)) {
+      if (/Android/i.test(navigator.userAgent)) {
+        window.location.assign(d.href)
+      } else if (isWailsNative()) {
+        void wails.call('OpenExternal', d.href)
+      } else {
+        void wails.call('OpenExternal', d.href).catch(() => window.location.assign(d.href!))
+      }
+    }
+  })
 })
 // Never start a sync while one is already running — two concurrent drains on
 // the same folder make SOGo return 405 Not Allowed and the loser aborts
@@ -2103,7 +2145,15 @@ watch(selectedAccount, async () => {
         <div class="reading-subject">{{ selectedEmail.subject }}</div>
         <div class="reading-to muted">To: {{ selectedEmail.to }} &lt;{{ selectedEmail.toEmails?.join(', ') }}&gt;</div>
         <div class="reading-body-card">
-          <div class="reading-body" v-if="selectedEmail.bodyType === 'html' || (selectedEmail.body && selectedEmail.body.includes('<'))" v-html="selectedEmail.body"></div>
+          <!-- HTML mail renders in a sandboxed iframe: the email's styles,
+               absolutely-positioned wrappers and z-index layers stay trapped
+               inside instead of painting over the app (v-html let every email
+               draw its own strata across the window). The injected relay
+               script reports height and forwards link clicks out. -->
+          <iframe v-if="selectedEmail.bodyType === 'html' || (selectedEmail.body && selectedEmail.body.includes('<'))"
+                  class="reading-iframe" :srcdoc="emailDoc"
+                  :style="{ height: (emailIframeH || 480) + 'px' }"
+                  sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe>
           <div class="reading-body" v-else>
             <p v-for="(para, i) in (selectedEmail.body || selectedEmail.preview || 'No content').split(/\n{2,}/)" :key="i">{{ para.trim() }}</p>
           </div>
