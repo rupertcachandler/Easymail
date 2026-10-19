@@ -31,7 +31,7 @@ import (
 
 // version is set at build time via -ldflags "-X easymail/internal/app.version=...".
 // (The old -X main.version=... was a silent no-op because main has no version var.)
-var version = "0.5.2"
+var version = "0.5.3"
 
 // GetVersion returns the current build number so the UI can show it.
 func (a *App) GetVersion() string {

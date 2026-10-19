@@ -71,10 +71,23 @@ public class WailsForegroundService extends android.app.Service {
                 .setContentIntent(contentIntent)
                 .build();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-        } else {
-            startForeground(NOTIFICATION_ID, n);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(NOTIFICATION_ID, n);
+            }
+        } catch (Exception e) {
+            // Android 12+ forbids startForeground() when the app is truly
+            // backgrounded — which is exactly what a START_STICKY restart is
+            // (system re-creates us after Doze killed the process). Throwing
+            // here is a FATAL main-thread crash: the whole process — Go poll
+            // loop included — dies and background mail silently stops.
+            // Bow out instead; the next MainActivity.onCreate restarts us from
+            // the foreground, where the call is allowed.
+            android.util.Log.w("WailsForegroundService", "startForeground rejected (background restart): " + e);
+            stopSelf();
+            return START_NOT_STICKY;
         }
         // Restart if the OS kills us while still wanted.
         return START_STICKY;
