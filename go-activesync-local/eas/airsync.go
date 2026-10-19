@@ -32,6 +32,12 @@ type SyncCollection struct {
 	Options       *SyncOptions  `wbxml:"AirSync.Options,omitempty"`
 	Commands      *SyncCommands `wbxml:"AirSync.Commands,omitempty"`
 	Responses     *SyncCommands `wbxml:"AirSync.Responses,omitempty"`
+	// DeletesAsMoves tells the server whether Delete commands should move items
+	// to the Deleted Items folder (true/default) or permanently expunge them
+	// (false). SOGo honours this: setting it to 0 on a Sync carrying Delete
+	// commands inside the Trash folder causes a genuine hard expire instead of
+	// re-touching the item with a fresh timestamp.
+	DeletesAsMoves *int32 `wbxml:"AirSync.DeletesAsMoves,omitempty"`
 }
 
 // SyncOptions is the per-collection Options element for a Sync request.

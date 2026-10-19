@@ -34,6 +34,10 @@ type stubPolicyStore struct{}
 func (s *stubPolicyStore) Get(_ context.Context) (string, error) { return "0", nil }
 func (s *stubPolicyStore) Set(_ context.Context, _ string) error  { return nil }
 
+// ptr returns a pointer to v. Used for EAS protocol fields that must be
+// explicitly present (e.g. DeletesAsMoves=0) rather than omitted.
+func ptr[T any](v T) *T { return &v }
+
 // Client wraps the go-activesync library for EAS communication
 type Client struct {
 	account   *models.Account
@@ -934,11 +938,15 @@ func (c *Client) HardDeleteEmails(ctx context.Context, del []struct{ ServerID, F
 			deletes = append(deletes, eas.SyncDelete{ServerID: sid})
 		}
 		col := eas.SyncCollection{
-			SyncKey:      sk,
-			CollectionID: folderID,
-			GetChanges:   0,
-			WindowSize:   50,
-			Commands:     &eas.SyncCommands{Delete: deletes},
+			SyncKey:        sk,
+			CollectionID:   folderID,
+			GetChanges:     0,
+			WindowSize:     50,
+			Commands:       &eas.SyncCommands{Delete: deletes},
+			// Tell SOGo we handle moves ourselves (default is true, which makes
+			// a Delete inside Trash a move that re-touches the item with a fresh
+			// date_received instead of expunging it). 0 = permanent delete.
+			DeletesAsMoves: ptr(int32(0)),
 		}
 		req := &eas.SyncRequest{
 			Collections: eas.SyncCollections{Collection: []eas.SyncCollection{col}},
