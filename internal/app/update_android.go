@@ -128,7 +128,7 @@ func startUpdateWatcher(a *App) {
 				log.Printf("update available: %s (running %s)", m.Version, version)
 			}
 		}
-		time.Sleep(6 * time.Hour)
+		time.Sleep(10 * time.Minute)
 	}
 }
 
