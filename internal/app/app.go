@@ -31,7 +31,7 @@ import (
 
 // version is set at build time via -ldflags "-X easymail/internal/app.version=...".
 // (The old -X main.version=... was a silent no-op because main has no version var.)
-var version = "0.5.5"
+var version = "0.5.6"
 
 // GetVersion returns the current build number so the UI can show it.
 func (a *App) GetVersion() string {
@@ -1105,8 +1105,11 @@ func (a *App) CreateMailFolder(accountID, displayName, parentServerId string) (s
 	return serverID, nil
 }
 
-// DeleteEmails deletes one or more emails from the server (moves them into the
-// account's Trash folder) and removes them from the local cache.
+// DeleteEmails deletes one or more emails from the server and removes them
+// from the local cache. Normally this moves items to the Trash folder (EAS
+// MoveItems). When the source folder IS the Trash folder, a permanent hard
+// delete is issued instead (EAS Sync Delete) — otherwise Trash->Trash is a
+// server no-op and the poll re-syncs the "deleted" items back.
 func (a *App) DeleteEmails(accountID string, items []struct {
 	ServerID string `json:"serverId"`
 	FolderID string `json:"folderId"`
@@ -1118,8 +1121,8 @@ func (a *App) DeleteEmails(accountID string, items []struct {
 	if len(items) == 0 {
 		return fmt.Errorf("no emails to delete")
 	}
-	// Find the account's Trash folder (EAS type 4). If none exists, the delete
-	// is refused rather than silently dropping mail.
+	// Find the account's Trash folder (EAS type 4). If none exists, the
+	// delete is refused rather than silently dropping mail.
 	folders, err := a.store.ListFolders(accountID)
 	if err != nil {
 		return fmt.Errorf("list folders: %w", err)
@@ -1135,18 +1138,37 @@ func (a *App) DeleteEmails(accountID string, items []struct {
 		return fmt.Errorf("no Trash folder found — cannot delete")
 	}
 
-	var moves []activesync.EmailMove
+	// Split: items in Trash get a real hard-delete; everything else moves to Trash.
+	var toMove []activesync.EmailMove
+	var toHardDelete []struct{ ServerID, FolderID string }
 	for _, it := range items {
-		moves = append(moves, activesync.EmailMove{
-			ServerID:    it.ServerID,
-			SrcFolderID: it.FolderID,
-			DstFolderID: trash.ServerID,
-		})
+		if it.FolderID == trash.ServerID {
+			toHardDelete = append(toHardDelete, struct{ ServerID, FolderID string }{it.ServerID, it.FolderID})
+		} else {
+			toMove = append(toMove, activesync.EmailMove{
+				ServerID:    it.ServerID,
+				SrcFolderID: it.FolderID,
+				DstFolderID: trash.ServerID,
+			})
+		}
 	}
-	if err := client.MoveEmails(a.ctx, moves); err != nil {
-		log.Printf("DeleteEmails: server move-to-trash failed: %v", err)
-		return err
+
+	// Non-Trash items: move to Trash.
+	if len(toMove) > 0 {
+		if err := client.MoveEmails(a.ctx, toMove); err != nil {
+			log.Printf("DeleteEmails: server move-to-trash failed: %v", err)
+			return err
+		}
 	}
+
+	// Already-in-Trash items: hard-delete so they don't resurrect on poll.
+	if len(toHardDelete) > 0 {
+		if err := client.HardDeleteEmails(a.ctx, toHardDelete); err != nil {
+			log.Printf("DeleteEmails: server hard-delete failed: %v", err)
+			return err
+		}
+	}
+
 	// Remove from local cache.
 	for _, it := range items {
 		folderID := accountID + "-" + it.FolderID

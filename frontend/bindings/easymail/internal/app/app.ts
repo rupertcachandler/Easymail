@@ -82,8 +82,11 @@ export function DeleteCalendarEvent(accountID: string, serverID: string, eventID
 }
 
 /**
- * DeleteEmails deletes one or more emails from the server (moves them into the
- * account's Trash folder) and removes them from the local cache.
+ * DeleteEmails deletes one or more emails from the server and removes them
+ * from the local cache. Normally this moves items to the Trash folder (EAS
+ * MoveItems). When the source folder IS the Trash folder, a permanent hard
+ * delete is issued instead (EAS Sync Delete) — otherwise Trash->Trash is a
+ * server no-op and the poll re-syncs the "deleted" items back.
  */
 export function DeleteEmails(accountID: string, items: {"serverId": string, "folderId": string}[] | null): $CancellablePromise<void> {
     return $Call.ByID(3916288799, accountID, items);
@@ -205,6 +208,12 @@ export function GetVersion(): $CancellablePromise<string> {
     return $Call.ByID(3145073177);
 }
 
+/**
+ * InstallUpdate is the binding behind the in-app update banner: downloads
+ * the pending update (if not already), verifies its sha256, then hands it to
+ * Android's package installer via WailsBridge.installUpdate. Progress and
+ * failures surface as "update-progress" / "update-error" events.
+ */
 export function InstallUpdate(): $CancellablePromise<void> {
     return $Call.ByID(1768869569);
 }

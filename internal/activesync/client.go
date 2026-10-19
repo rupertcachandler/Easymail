@@ -898,6 +898,73 @@ func (c *Client) MoveEmails(ctx context.Context, moves []EmailMove) error {
 	return nil
 }
 
+// HardDeleteEmails permanently deletes one or more emails from the server via
+// an EAS Sync Delete command, without moving them to Trash first. This is the
+// only way to remove mail that already sits in the Trash folder: MoveItems
+// (the normal delete path) is a no-op when source==destination, so the poll
+// would simply re-sync the item back. Mirrors DeleteCalendarEvent, which SOGo
+// honours.
+func (c *Client) HardDeleteEmails(ctx context.Context, del []struct{ ServerID, FolderID string }) error {
+	if !c.connected {
+		return fmt.Errorf("not connected")
+	}
+	if len(del) == 0 {
+		return fmt.Errorf("no emails to hard-delete")
+	}
+
+	// Group by source collection so each collection gets one Delete command
+	// carrying all its items, then establish a valid SyncKey per collection.
+	byFolder := map[string][]string{}
+	order := []string{}
+	for _, d := range del {
+		if _, ok := byFolder[d.FolderID]; !ok {
+			order = append(order, d.FolderID)
+		}
+		byFolder[d.FolderID] = append(byFolder[d.FolderID], d.ServerID)
+	}
+
+	for _, folderID := range order {
+		_, sk, err := twoPhaseSync[eas.Email](ctx, c, folderID, 50)
+		if err != nil {
+			return fmt.Errorf("establish sync key for %s: %w", folderID, err)
+		}
+
+		deletes := make([]eas.SyncDelete, 0, len(byFolder[folderID]))
+		for _, sid := range byFolder[folderID] {
+			deletes = append(deletes, eas.SyncDelete{ServerID: sid})
+		}
+		col := eas.SyncCollection{
+			SyncKey:      sk,
+			CollectionID: folderID,
+			GetChanges:   0,
+			WindowSize:   50,
+			Commands:     &eas.SyncCommands{Delete: deletes},
+		}
+		req := &eas.SyncRequest{
+			Collections: eas.SyncCollections{Collection: []eas.SyncCollection{col}},
+		}
+		resp, err := c.easClient.Sync(ctx, c.account.Email, req)
+		if err != nil {
+			return fmt.Errorf("hard-delete %s: %w", folderID, err)
+		}
+		for _, col := range resp.Collections.Collection {
+			// SOGo processes the Delete even under collection status 3 (resync);
+			// only unexpected statuses fail the delete.
+			if col.Status != 0 && col.Status != 1 && col.Status != 3 {
+				return fmt.Errorf("hard-delete %s: status %d", folderID, col.Status)
+			}
+			if col.SyncKey != "" {
+				c.syncKeys[folderID] = col.SyncKey
+				if c.saveSyncKey != nil {
+					c.saveSyncKey(folderID, col.SyncKey)
+				}
+			}
+		}
+	}
+	log.Printf("HardDeleteEmails: permanently deleted %d email(s)", len(del))
+	return nil
+}
+
 // CreateFolder creates a new user-visible mail folder (type 12). parentID is
 // the EAS ServerID of the parent folder, or "0" for the mailbox root — pass
 // a real parent to create a subfolder. Returns the new folder's server ID.
