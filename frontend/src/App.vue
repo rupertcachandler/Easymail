@@ -65,7 +65,19 @@ const wails = {
     return null
   },
   on(event: string, handler: (...args: any[]) => void) {
-    if (isWailsNative()) WailsEventsOn(event, handler)
+    if (!isWailsNative()) return
+    // v3 event envelope trap: the callback receives the whole WailsEvent
+    // {name, data} object, not v2's positional args. Go Emit(name, data...)
+    // packs 1 arg as data directly, >1 args as an array. Unwrap so the
+    // v2-style handlers below keep working (emails-updated / new-mail /
+    // account-connected / update-* were ALL silently dropping events — the
+    // UI never refreshed from the poll, the OTA banner never rendered,
+    // auto-sync on connect never fired. Fixed 2026-10-19, v0.5.5).
+    WailsEventsOn(event, (payload: any) => {
+      const d = payload && (payload as any).data
+      if (Array.isArray(d)) handler(...d)
+      else handler(d)
+    })
   }
 }
 
