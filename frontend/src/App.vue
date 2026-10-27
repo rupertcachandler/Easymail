@@ -51,6 +51,7 @@ const wails = {
         CopyEmails: AppBinding.CopyEmails,
         MoveEmails: AppBinding.MoveEmails,
         DeleteEmails: AppBinding.DeleteEmails,
+        DeleteEmailsBySender: AppBinding.DeleteEmailsBySender,
         GetAIConfig: AppBinding.GetAIConfig,
         SaveAIConfig: AppBinding.SaveAIConfig,
         AIValidateKey: AppBinding.AIValidateKey,
@@ -1177,6 +1178,21 @@ function selectedEmails(): Email[] {
   return personEmails.value.filter(e => sel.has(e.id))
 }
 
+// Delete ALL mail from one sender/recipient — the People-list trash action.
+// Same server semantics as DeleteEmails (outside Trash → move to Trash,
+// already in Trash → hard delete), executed in one batched call.
+async function deleteAllFromSender(s: PersonInfo) {
+  const label = s.name || s.email
+  confirmAsk(`Delete ALL ${s.count} email${s.count !== 1 ? 's' : ''} from ${label}? Mail outside Trash is moved there; mail already in Trash is permanently deleted.`, async () => {
+    try {
+      const n = await wails.call('DeleteEmailsBySender', selectedAccount.value, s.email)
+      if (selectedPerson.value === s.email) selectedPerson.value = null
+      await loadAllEmails()
+      moveError.value = `Deleted ${n} email${n !== 1 ? 's' : ''} from ${label}`
+    } catch (err: any) { moveError.value = err?.message || 'Delete failed' }
+  })
+}
+
 // Delete: Settings → Mail & Folders → Delete (single or the highlighted group).
 async function deleteEmails() {
   const items = selectedEmails()
@@ -2087,6 +2103,7 @@ watch(selectedAccount, async () => {
                 <span v-if="s.attCount" class="att-clip" :title="s.attCount + ' mail' + (s.attCount > 1 ? 's' : '') + ' with attachments'">📎{{ s.attCount > 1 ? s.attCount : '' }}</span>
                 <span v-if="s.unreadCount" class="unread-chip" :title="s.unreadCount + ' unread from ' + s.name">{{ s.unreadCount }}</span>
                 <span v-else class="sender-ct">{{ s.count }}</span>
+                <span class="sender-del" title="Delete all mail from this sender" @click.stop="deleteAllFromSender(s)">🗑</span>
               </div>
             </button>
           </template>
@@ -2103,6 +2120,7 @@ watch(selectedAccount, async () => {
               <span v-if="s.attCount" class="att-clip" :title="s.attCount + ' mail' + (s.attCount > 1 ? 's' : '') + ' with attachments'">📎{{ s.attCount > 1 ? s.attCount : '' }}</span>
               <span v-if="s.unreadCount" class="unread-chip" :title="s.unreadCount + ' unread from ' + s.name">{{ s.unreadCount }}</span>
               <span v-else class="sender-ct">{{ s.count }}</span>
+              <span class="sender-del" title="Delete all mail from this sender" @click.stop="deleteAllFromSender(s)">🗑</span>
             </div>
           </button>
         </template>

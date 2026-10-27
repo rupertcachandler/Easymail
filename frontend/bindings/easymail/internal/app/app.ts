@@ -93,6 +93,18 @@ export function DeleteEmails(accountID: string, items: {"serverId": string, "fol
 }
 
 /**
+ * DeleteEmailsBySender deletes ALL mail exchanged with one sender/recipient
+ * from the server and the local cache, in one shot. Used from the People list
+ * to clear a correspondent's mail without opening their thread. Same
+ * semantics as DeleteEmails: mail outside Trash is moved there; mail already
+ * in Trash is hard-deleted. The batch is split into one MoveItems call and
+ * one Sync-Delete call instead of per-mail round trips.
+ */
+export function DeleteEmailsBySender(accountID: string, senderEmail: string): $CancellablePromise<number> {
+    return $Call.ByID(4284420559, accountID, senderEmail);
+}
+
+/**
  * DownloadAttachment fetches an attachment and writes it to the user's
  * Downloads directory, returning the absolute path it was saved to.
  * 

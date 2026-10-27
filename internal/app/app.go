@@ -31,7 +31,7 @@ import (
 
 // version is set at build time via -ldflags "-X easymail/internal/app.version=...".
 // (The old -X main.version=... was a silent no-op because main has no version var.)
-var version = "0.5.9"
+var version = "0.6.1"
 
 // GetVersion returns the current build number so the UI can show it.
 func (a *App) GetVersion() string {
@@ -1121,42 +1121,96 @@ func (a *App) DeleteEmails(accountID string, items []struct {
 	if len(items) == 0 {
 		return fmt.Errorf("no emails to delete")
 	}
-	// Find the account's Trash folder (EAS type 4). If none exists, the
-	// delete is refused rather than silently dropping mail.
-	folders, err := a.store.ListFolders(accountID)
+	trashServerID, err := a.trashServerID(accountID)
 	if err != nil {
-		return fmt.Errorf("list folders: %w", err)
-	}
-	var trash *models.Folder
-	for _, f := range folders {
-		if f.Type == 4 {
-			trash = f
-			break
-		}
-	}
-	if trash == nil {
-		return fmt.Errorf("no Trash folder found — cannot delete")
+		return err
 	}
 
 	// Split: items in Trash get a real hard-delete; everything else moves to Trash.
 	var toMove []activesync.EmailMove
 	var toHardDelete []struct{ ServerID, FolderID string }
 	for _, it := range items {
-		if it.FolderID == trash.ServerID {
+		if it.FolderID == trashServerID {
 			toHardDelete = append(toHardDelete, struct{ ServerID, FolderID string }{it.ServerID, it.FolderID})
 		} else {
 			toMove = append(toMove, activesync.EmailMove{
 				ServerID:    it.ServerID,
 				SrcFolderID: it.FolderID,
-				DstFolderID: trash.ServerID,
+				DstFolderID: trashServerID,
 			})
 		}
 	}
+	return a.applyDeleteSplit(accountID, client, toMove, toHardDelete, len(items))
+}
 
+// DeleteEmailsBySender deletes ALL mail exchanged with one sender/recipient
+// from the server and the local cache, in one shot. Used from the People list
+// to clear a correspondent's mail without opening their thread. Same
+// semantics as DeleteEmails: mail outside Trash is moved there; mail already
+// in Trash is hard-deleted. The batch is split into one MoveItems call and
+// one Sync-Delete call instead of per-mail round trips.
+func (a *App) DeleteEmailsBySender(accountID, senderEmail string) (int, error) {
+	client, ok := a.clients[accountID]
+	if !ok {
+		return 0, fmt.Errorf("account not connected")
+	}
+	senderEmail = strings.ToLower(strings.TrimSpace(senderEmail))
+	if senderEmail == "" {
+		return 0, fmt.Errorf("sender address required")
+	}
+	lookup, err := a.store.ListEmailsByContact(accountID, senderEmail, 0, 100000)
+	if err != nil {
+		return 0, fmt.Errorf("list sender mail: %w", err)
+	}
+	if len(lookup) == 0 {
+		return 0, nil
+	}
+	trashServerID, err := a.trashServerID(accountID)
+	if err != nil {
+		return 0, err
+	}
+	// Split by destination like DeleteEmails does.
+	var toMove []activesync.EmailMove
+	var toHardDelete []struct{ ServerID, FolderID string }
+	for _, e := range lookup {
+		serverFolderID := strings.TrimPrefix(e.FolderID, accountID+"-")
+		if serverFolderID == trashServerID {
+			toHardDelete = append(toHardDelete, struct{ ServerID, FolderID string }{e.ServerID, serverFolderID})
+		} else {
+			toMove = append(toMove, activesync.EmailMove{
+				ServerID:    e.ServerID,
+				SrcFolderID: serverFolderID,
+				DstFolderID: trashServerID,
+			})
+		}
+	}
+	return len(lookup), a.applyDeleteSplit(accountID, client, toMove, toHardDelete, len(lookup))
+}
+
+// trashServerID returns the EAS ServerID of the account's Trash folder
+// (type 4), or an error if none exists. Deleting without a Trash would
+// silently drop mail, so callers refuse instead.
+func (a *App) trashServerID(accountID string) (string, error) {
+	folders, err := a.store.ListFolders(accountID)
+	if err != nil {
+		return "", fmt.Errorf("list folders: %w", err)
+	}
+	for _, f := range folders {
+		if f.Type == 4 {
+			return f.ServerID, nil
+		}
+	}
+	return "", fmt.Errorf("no Trash folder found — cannot delete")
+}
+
+// applyDeleteSplit executes one batched move-to-Trash and one batched
+// hard-delete, then removes the rows from the local cache and notifies the
+// UI. Shared by DeleteEmails and DeleteEmailsBySender.
+func (a *App) applyDeleteSplit(accountID string, client *activesync.Client, toMove []activesync.EmailMove, toHardDelete []struct{ ServerID, FolderID string }, total int) error {
 	// Non-Trash items: move to Trash.
 	if len(toMove) > 0 {
 		if err := client.MoveEmails(a.ctx, toMove); err != nil {
-			log.Printf("DeleteEmails: server move-to-trash failed: %v", err)
+			log.Printf("applyDeleteSplit: server move-to-trash failed: %v", err)
 			return err
 		}
 	}
@@ -1164,20 +1218,27 @@ func (a *App) DeleteEmails(accountID string, items []struct {
 	// Already-in-Trash items: hard-delete so they don't resurrect on poll.
 	if len(toHardDelete) > 0 {
 		if err := client.HardDeleteEmails(a.ctx, toHardDelete); err != nil {
-			log.Printf("DeleteEmails: server hard-delete failed: %v", err)
+			log.Printf("applyDeleteSplit: server hard-delete failed: %v", err)
 			return err
 		}
 	}
 
-	// Remove from local cache.
-	for _, it := range items {
-		folderID := accountID + "-" + it.FolderID
-		if err := a.store.DeleteEmails(folderID, []string{it.ServerID}); err != nil {
-			log.Printf("DeleteEmails: local delete of %s failed: %v", it.ServerID, err)
+	// Remove from local cache (Moves vanish from source folder; hard deletes
+	// vanish from Trash). The poll sweep will also reconcile anything missed.
+	for _, m := range toMove {
+		folderID := accountID + "-" + m.SrcFolderID
+		if err := a.store.DeleteEmails(folderID, []string{m.ServerID}); err != nil {
+			log.Printf("applyDeleteSplit: local delete of %s failed: %v", m.ServerID, err)
+		}
+	}
+	for _, d := range toHardDelete {
+		folderID := accountID + "-" + d.FolderID
+		if err := a.store.DeleteEmails(folderID, []string{d.ServerID}); err != nil {
+			log.Printf("applyDeleteSplit: local delete of %s failed: %v", d.ServerID, err)
 		}
 	}
 	a.emitEvent("emails-updated", accountID, "")
-	log.Printf("DeleteEmails: deleted %d email(s)", len(items))
+	log.Printf("applyDeleteSplit: deleted %d email(s)", total)
 	return nil
 }
 

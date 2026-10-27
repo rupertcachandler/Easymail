@@ -38,10 +38,8 @@ func TestReconcileEmails(t *testing.T) {
 			t.Fatalf("save %s: %v", sid, err)
 		}
 	}
-	// Three rows: 200 (recent, gone from server → ghost), 201 (~4 days old →
-	// outside the poll window but inside the wide one, absent from the wide
-	// authoritative set → ghost of the wide pass), 202 (recent, still on
-	// server → survives).
+
+	// --- sweep fixture ---
 	save("200", now.Add(-3*time.Hour))
 	save("201", now.Add(-100*time.Hour))
 	save("202", now.Add(-time.Hour))
@@ -82,5 +80,42 @@ func TestReconcileEmails(t *testing.T) {
 		if err != nil || !ok {
 			t.Fatalf("row %s must survive wide pass, ok=%v err=%v", sid, ok, err)
 		}
+	}
+}
+// TestListEmailsByContactCaseInsensitive: the People list lowercases sender
+// keys, but SQLite = is case-sensitive; the lookup must match mixed-case
+// stored addresses or delete-all-from-sender silently reports 0.
+func TestListEmailsByContactCaseInsensitive(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+
+	accID := "acc-ci"
+	folderID := accID + "-mail%2Finbox"
+	now := time.Now().UTC()
+	e := &models.Email{
+		ID:           folderID + "-c1",
+		AccountID:    accID,
+		FolderID:     folderID,
+		ServerID:     "c1",
+		DateReceived: now,
+		FromEmail:    "Adarsh.Kurian@careuk.com",
+	}
+	if err := s.SaveEmail(e); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	list, err := s.ListEmailsByContact(accID, "adarsh.kurian@careuk.com", 0, 50)
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 hit for lowercased mixed-case sender, got %d", len(list))
+	}
+	// Exact-case lookup still works and a wrong address matches nothing.
+	if list2, _ := s.ListEmailsByContact(accID, "nobody@example.com", 0, 50); len(list2) != 0 {
+		t.Fatalf("expected 0 hits for unknown sender, got %d", len(list2))
 	}
 }

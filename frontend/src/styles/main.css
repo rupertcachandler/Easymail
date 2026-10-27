@@ -285,6 +285,13 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 }
 .sender-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .sender-ct { font-size: 11px; color: var(--text-dim); font-weight: 500; }
+.sender-del {
+  font-size: 13px; line-height: 1; cursor: pointer;
+  padding: 2px 4px; border-radius: 4px; opacity: 0.35;
+  transition: opacity 0.15s, background 0.15s; user-select: none;
+}
+.sender-row:hover .sender-del { opacity: 0.85; }
+.sender-del:hover { opacity: 1 !important; background: var(--bg-hover); }
 .unread-chip {
   min-width: 18px; padding: 1px 7px; border-radius: 999px;
   background: var(--gradient-accent); color: #fff;

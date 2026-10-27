@@ -864,7 +864,7 @@ func (s *Store) ListEmailsByContact(accountID, contactEmail string, offset, limi
 	rows, err := s.handle().Query(`SELECT id, account_id, folder_id, server_id, from_name, from_email,
 		to_text, to_emails, cc_text, cc_emails, subject, thread_topic, date_received,
 		is_read, is_flagged, importance, has_attachment, preview, body, body_type
-		FROM emails WHERE account_id = ? AND (from_email = ? OR to_emails LIKE ?)
+		FROM emails WHERE account_id = ? AND (LOWER(from_email) = LOWER(?) OR LOWER(to_emails) LIKE LOWER(?))
 		ORDER BY date_received DESC LIMIT ? OFFSET ?`,
 		accountID, contactEmail, "%"+contactEmail+"%", limit, offset)
 	if err != nil {
