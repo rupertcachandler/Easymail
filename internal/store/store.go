@@ -739,6 +739,51 @@ func (s *Store) CountEmails(folderID string) (int64, error) {
 	return n, err
 }
 
+// ReconcileEmails removes local email rows in a folder that the server no
+// longer reports within [lo, hi), returning the list of removed server IDs.
+// Stateless EAS syncs (SyncKey "0") never return deletedIDs — there's no
+// diff baseline against the server — so rows for mail deleted server-side
+// would otherwise linger in the local store forever (ghost rows). Pass the
+// authoritative set the server just returned so we only keep rows it claims
+// to hold. The hi bound is the lag guard: SOGo's wide-window snapshot can
+// trail recent items by ~a day, so sweep only rows older than hi and never
+// delete mail the snapshot might simply not have reached yet.
+func (s *Store) ReconcileEmails(folderID string, authoritative []string, lo, hi time.Time) ([]string, error) {
+	keep := make(map[string]bool, len(authoritative))
+	for _, id := range authoritative {
+		keep[id] = true
+	}
+	rows, err := s.handle().Query(`SELECT server_id, date_received FROM emails WHERE folder_id = ?`, folderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ghosts []string
+	for rows.Next() {
+		var sid string
+		var received time.Time
+		if err := rows.Scan(&sid, &received); err != nil {
+			return nil, err
+		}
+		if received.Before(lo) || !received.Before(hi) {
+			continue // outside the sweep window — server response doesn't cover it
+		}
+		if !keep[sid] {
+			ghosts = append(ghosts, sid)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ghosts) == 0 {
+		return nil, nil
+	}
+	if err := s.DeleteEmails(folderID, ghosts); err != nil {
+		return nil, err
+	}
+	return ghosts, nil
+}
+
 // EmailExists reports whether an email (serverID within a folder) is already
 // stored. Used to distinguish a genuinely-NEW arrived message from a resync
 // refresh — the emails table uses INSERT OR REPLACE, so a resync rewrites

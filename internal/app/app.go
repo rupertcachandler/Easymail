@@ -31,7 +31,7 @@ import (
 
 // version is set at build time via -ldflags "-X easymail/internal/app.version=...".
 // (The old -X main.version=... was a silent no-op because main has no version var.)
-var version = "0.5.7"
+var version = "0.5.9"
 
 // GetVersion returns the current build number so the UI can show it.
 func (a *App) GetVersion() string {
@@ -1969,6 +1969,11 @@ func (a *App) pollMailOnce() {
 				continue
 			}
 			a.applySyncResults(accountID, f.ServerID, "poll", emails, deletedIDs)
+			// Reconcile the recent tail against the narrow window — the ONE
+			// response SOGo serves reliably. Mail missing from the last 24h is
+			// genuinely gone server-side; without this sweep, rows for mail
+			// deleted/expunged on the server stay cached locally forever.
+			a.sweepLocalGhosts(accountID, f.ServerID, emails, time.Now().Add(-24*time.Hour), time.Now())
 			if len(emails) > 0 || len(deletedIDs) > 0 {
 				log.Printf("pollMailOnce: %s (%s) +%d -%d", accountID, f.Name, len(emails), len(deletedIDs))
 				// Only notify the UI when something actually changed. Emitting
@@ -1988,6 +1993,41 @@ func (a *App) pollMailOnce() {
 // connected account, applying deletions. It's deliberately serialized per
 // client (syncMu) and runs in the background, so it's safe against a racing
 // frontend sync.
+// sweepLocalGhosts reconciles the local store for a folder against an
+// authoritative sync response: any row cached inside [lo, hi) whose server_id
+// is absent from the response is a ghost (deleted server-side) and is
+// removed. Stateless EAS syncs (SyncKey "0") never report deletions, so
+// without this sweep rows for mail expunged on the server would sit in the
+// local store forever. Emits emails-updated only when rows were removed.
+//
+// Window choice matters — the response is only authoritative for the range it
+// covers, and sweeping outside it would delete mail the sync didn't see:
+//   - poll path:  lo=now-24h, hi=now   — the narrow window is reliable
+//        (SOGo serves recent mail exactly); anything missing from it in the
+//        last 24h is genuinely gone.
+//   - reconcile:  lo=now-180d, hi=now-72h — the wide snapshot can lag ~a day
+//        on the most recent items, so the recent tail is owned by the poll
+//        sweep and only older rows are judged against the wide set.
+func (a *App) sweepLocalGhosts(accountID, serverID string, emails []*models.Email, lo, hi time.Time) {
+	folderID := accountID + "-" + serverID
+	authoritative := make([]string, 0, len(emails))
+	for _, e := range emails {
+		authoritative = append(authoritative, e.ServerID)
+	}
+	ghosts, err := a.store.ReconcileEmails(folderID, authoritative, lo, hi)
+	if err != nil {
+		if store.IsCorruption(err) {
+			a.selfHeal("reconcile-sweep")
+		}
+		log.Printf("sweepLocalGhosts: %s (%s) failed: %v", accountID, serverID, err)
+		return
+	}
+	if len(ghosts) > 0 {
+		log.Printf("sweepLocalGhosts: removed %d ghost rows from %s (%s)", len(ghosts), accountID, serverID)
+		a.emitEvent("emails-updated", accountID, serverID)
+	}
+}
+
 func (a *App) runReconcileOnce() {
 	a.syncMu.Lock()
 	defer a.syncMu.Unlock()
@@ -2010,6 +2050,11 @@ func (a *App) runReconcileOnce() {
 				continue
 			}
 			a.applySyncResults(accountID, f.ServerID, "backfill", emails, deletedIDs)
+			// Wide-window sweep: rows missing from the 180-day response (older
+			// than the 72h lag guard; the recent tail is the poll's job) are
+			// ghosts — stateless EAS syncs never report deletions, so without
+			// this sweep expunged mail would stay cached forever.
+			a.sweepLocalGhosts(accountID, f.ServerID, emails, time.Now().AddDate(0, 0, -180), time.Now().Add(-72*time.Hour))
 			a.emitEvent("emails-updated", accountID, f.ServerID)
 		}
 	}
