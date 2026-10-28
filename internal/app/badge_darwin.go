@@ -12,9 +12,9 @@ static void darwinSetBadgeNative(long count) {
 	dispatch_async(dispatch_get_main_queue(), ^{
 		if (NSApp) {
 			if (count > 0) {
-				[NSApp dockTile setBadgeLabel:[NSString stringWithFormat:@"%ld", count]];
+				[[NSApp dockTile] setBadgeLabel:[NSString stringWithFormat:@"%ld", count]];
 			} else {
-				[NSApp dockTile setBadgeLabel:nil];
+				[[NSApp dockTile] setBadgeLabel:nil];
 			}
 		}
 	});
