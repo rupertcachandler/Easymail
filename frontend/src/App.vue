@@ -1032,6 +1032,13 @@ const newFolderName = ref('')
 const newFolderParentId = ref('') // '' = mailbox root; else the parent mail folder id
 const folderBusy = ref(false)
 const moveError = ref('')
+// Auto-clear the transient banner (delete/move/create confirmations and
+// errors) after 5s so it doesn't sit at the top until clicked.
+let _moveErrorTimer: ReturnType<typeof setTimeout> | null = null
+watch(moveError, (v) => {
+  if (_moveErrorTimer) { clearTimeout(_moveErrorTimer); _moveErrorTimer = null }
+  if (v) { _moveErrorTimer = setTimeout(() => { moveError.value = '' }, 5000) }
+})
 
 // ---- In-app confirmation (replaces native confirm()) ----
 // WebKitGTK in the Wails window does NOT implement JavaScript's confirm() —
